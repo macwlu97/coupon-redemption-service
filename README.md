@@ -49,15 +49,15 @@ The system consists of the following modules:
 ### Running the System
 1.  **Start Eureka Server**:
     ```bash
-    cd eureka-server && ./mvnw spring-boot:run
+    cd eureka-server && mvn spring-boot:run
     ```
 2.  **Start Coupon Service**:
     ```bash
-    cd coupon-service && ./mvnw spring-boot:run
+    cd coupon-service && mvn spring-boot:run
     ```
 3.  **Start Usage Service**:
     ```bash
-    cd usage-service && ./mvnw spring-boot:run
+    cd usage-service && mvn spring-boot:run
     ```
 
 ---
