@@ -23,23 +23,34 @@ spring:
       enabled: false
 #    import: configserver:${CONFIG_SERVER_URL}
 
+#  datasource:
+#    primary:
+#      url: jdbc:postgresql://localhost:5432/coupon_db
+#      username: maciejwnuklipinski
+#      password: pswd
+#      hikari:
+#        maximum-pool-size: 10
+
+#  jpa:
+#    hibernate:
+#      ddl-auto: validate
+
   datasource:
-    primary:
-      url: jdbc:postgresql://localhost:5432/coupon_db
-      username: maciejwnuklipinski
-      password: pswd
-      hikari:
-        maximum-pool-size: 10
+    url: jdbc:h2:mem:coupondb # Na start H2 (w pamięci), łatwe do sprawdzenia
+    driverClassName: org.h2.Driver
+    username: sa
+    password: password
+    jpa:
+      hibernate:
+        ddl-auto: create-drop
+      show-sql: true
+      defer-datasource-initialization: true
 
   kafka:
     bootstrap-servers: localhost:9092
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
-
-  jpa:
-    hibernate:
-      ddl-auto: validate
 
 eureka:
   client:
