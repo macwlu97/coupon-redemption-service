@@ -21,16 +21,20 @@ public class CouponController {
 
     /**
      * Registers coupon usage.
-     * The IP address is automatically retrieved from the request.
+     * It tries to extract the IP from 'X-Forwarded-For' header first to support proxies and integration tests.
      */
     @PostMapping("/{code}/redeem")
     public ResponseEntity<Void> redeem(
             @PathVariable String code,
             HttpServletRequest request) {
 
-        // request.getRemoteAddr() to klucz do GeoIP
-        service.processRedemption(code, request.getRemoteAddr());
-        return ResponseEntity.accepted().build();
+        String ip = request.getHeader("X-Forwarded-For");
+        if (ip == null || ip.isEmpty()) {
+            ip = request.getRemoteAddr();
+        }
+
+        service.processRedemption(code, ip);
+        return ResponseEntity.ok().build(); // Standard 200 OK for successful redemption
     }
 
     /**
@@ -43,7 +47,7 @@ public class CouponController {
     }
 
     /**
-     * Retrieves all coupons (for testing/viewing purposes).
+     * Retrieves all coupons for overview.
      */
     @GetMapping
     public List<CouponResponse> getAll() {

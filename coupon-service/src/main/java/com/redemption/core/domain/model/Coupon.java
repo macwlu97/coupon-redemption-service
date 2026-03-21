@@ -26,7 +26,7 @@ public class Coupon {
     private String targetCountry;
 
     @Version
-    private Long version; // Optimistic Locking dla wysokiej współbieżności
+    private Long version; // Optimistic locking to prevent race conditions
 
     public Coupon(String code, int usageLimit, String targetCountry) {
         this.code = code.toUpperCase();
@@ -36,6 +36,10 @@ public class Coupon {
         this.createdAt = LocalDateTime.now();
     }
 
+    /**
+     * Executes the redemption logic.
+     * Validates country and usage limits.
+     */
     public void redeem(String userCountry) {
         if (!this.targetCountry.equalsIgnoreCase(userCountry)) {
             throw new CouponException.InvalidCountry(userCountry, this.targetCountry);
