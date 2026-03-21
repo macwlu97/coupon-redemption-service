@@ -36,15 +36,23 @@ spring:
 #      ddl-auto: validate
 
   datasource:
-    url: jdbc:h2:mem:coupondb # Na start H2 (w pamięci), łatwe do sprawdzenia
+    url: jdbc:h2:mem:coupondb
     driverClassName: org.h2.Driver
     username: sa
     password: password
-    jpa:
+
+    # JPA i SQL muszą być TUTAJ (na tym samym poziomie co datasource)
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+    properties:
       hibernate:
-        ddl-auto: create-drop
-      show-sql: true
-      defer-datasource-initialization: true
+        format_sql: true
+    defer-datasource-initialization: true
+  sql:
+    init:
+      mode: always
 
   kafka:
     bootstrap-servers: localhost:9092

@@ -1,0 +1,3 @@
+INSERT INTO coupons (id, code, usage_limit, current_usage, target_country, created_at, version) VALUES ('a1b2c3d4-e5f6-47a8-b9c0-1234567890ab', 'WIOSNA2026', 100, 0, 'PL', NOW(), 0);
+INSERT INTO coupons (id, code, usage_limit, current_usage, target_country, created_at, version) VALUES ('b2c3d4e5-f6a7-48b9-c0d1-234567890abc', 'ALOHA-HAWAII', 10, 5, 'US', NOW(), 0);
+INSERT INTO coupons (id, code, usage_limit, current_usage, target_country, created_at, version) VALUES ('c3d4e5f6-a7b8-49c0-d1e2-34567890abcd', 'EMPIK-PROMO', 500, 499, 'PL', NOW(), 0);
