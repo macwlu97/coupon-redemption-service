@@ -30,7 +30,7 @@ Redeem the `WIOSNA2026` coupon (which is restricted to `PL`).
 We simulate a Polish IP address using the `X-Forwarded-For` header.
 ```bash
 curl -i -X POST "http://localhost:8081/api/v1/coupons/WIOSNA2026/redeem" \
-     -H "X-Forwarded-For: 5.173.0.1" |  jq
+     -H "X-Forwarded-For: 5.173.0.1"
 ```
 *Expected Response: `200 OK` or `204 No Content`.*
 
@@ -40,7 +40,7 @@ curl -i -X POST "http://localhost:8081/api/v1/coupons/WIOSNA2026/redeem" \
 Attempt to use the same Polish coupon while "located" in Germany.
 ```bash
 curl -i -X POST "http://localhost:8081/api/v1/coupons/WIOSNA2026/redeem" \
-     -H "X-Forwarded-For: 3.120.0.1" |  jq
+     -H "X-Forwarded-For: 3.120.0.1"
 ```
 *Expected Response: `400 Bad Request` or `422 Unprocessable Entity` with an error message regarding the country mismatch.*
 
@@ -50,7 +50,7 @@ curl -i -X POST "http://localhost:8081/api/v1/coupons/WIOSNA2026/redeem" \
 Try to redeem a code that doesn't exist in the database.
 ```bash
 curl -i -X POST "http://localhost:8081/api/v1/coupons/INVALID-CODE/redeem" \
-     -H "X-Forwarded-For: 5.173.0.1" |  jq
+     -H "X-Forwarded-For: 5.173.0.1" 
 ```
 *Expected Response: `404 Not Found`.*
 

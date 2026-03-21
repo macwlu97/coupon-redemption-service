@@ -69,8 +69,11 @@ resilience4j:
   retry:
     instances:
       geoip:
-        maxAttempts: 3
-        waitDuration: 1s
+        max-attempts: 3
+        wait-duration: 1000ms # Wait half a second before retrying
+        retry-exceptions:
+          - org.springframework.web.client.RestClientException
+          - java.io.IOException
 
 server:
   port: 8081

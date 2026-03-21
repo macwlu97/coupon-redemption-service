@@ -7,15 +7,19 @@ import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
+import java.net.URI;
+
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    /**
+     * Handles domain-specific business exceptions.
+     */
     @ExceptionHandler(CouponException.class)
     public ProblemDetail handleCouponException(CouponException ex) {
-        // Updated to Java 21 Pattern Matching
+        // Using Java 21 pattern matching for switch
         HttpStatus status = switch (ex) {
             case CouponException.NotFound ignored -> HttpStatus.NOT_FOUND;
-            // Changed from FORBIDDEN to BAD_REQUEST to match integration tests
             case CouponException.InvalidCountry ignored -> HttpStatus.BAD_REQUEST;
             case CouponException.LimitExceeded ignored -> HttpStatus.CONFLICT;
         };
@@ -26,13 +30,20 @@ public class GlobalExceptionHandler {
         return problem;
     }
 
+    /**
+     * Handles Concurrency issues (Optimistic Locking).
+     * This happens when two users try to redeem the same coupon simultaneously.
+     */
     @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
-    public ProblemDetail handleConcurrency() {
+    public ProblemDetail handleConcurrencyConflict(ObjectOptimisticLockingFailureException ex) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(
-                HttpStatus.SERVICE_UNAVAILABLE,
-                "The system is currently busy. Please try again in a moment."
+                HttpStatus.CONFLICT,
+                "The coupon is currently being processed by another request. Please try again."
         );
         problem.setTitle("Concurrency Conflict");
+        problem.setProperty("error_code", "CONCURRENT_UPDATE");
+        // Good practice for Senior level: point to documentation or help
+        problem.setType(URI.create("https://api.redemption.com/errors/concurrency"));
         return problem;
     }
 }
