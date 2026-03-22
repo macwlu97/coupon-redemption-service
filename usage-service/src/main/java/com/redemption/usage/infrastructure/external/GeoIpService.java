@@ -1,6 +1,7 @@
 package com.redemption.usage.infrastructure.external;
 
 import com.redemption.usage.infrastructure.external.provider.GeoIpProvider;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,7 +20,8 @@ public class GeoIpService {
 
     private final List<GeoIpProvider> providers;
 
-    @Retry(name = "geoip", fallbackMethod = "fallbackToNext")
+    @CircuitBreaker(name = "geoipCB", fallbackMethod = "fallbackForCircuitBreaker")
+    @Retry(name = "geoip")
     public String getCountryCode(String ip) {
         if (isLocal(ip)) return "PL";
 
@@ -34,7 +36,7 @@ public class GeoIpService {
      * Fallback method – if IpApiProvider fails (e.g., proxy error),
      * Resilience4j calls this to check AbstractApi.
      */
-    public String fallbackToNext(String ip, Throwable t) {
+    public String fallbackForCircuitBreaker(String ip, Throwable t) {
         log.error("Primary GeoIP provider failed ({}). Switching to secondary...", t.getMessage());
 
         return providers.stream()

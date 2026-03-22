@@ -1,0 +1,45 @@
+### 1. COUPON-SERVICE: Create a new coupon
+# Create a coupon for the US with a limit of 2 uses.
+POST http://localhost:8081/api/v1/coupons
+Content-Type: application/json
+
+{
+  "code": "SUMMER2026",
+  "limit": 2,
+  "countryCode": "US"
+}
+
+###
+
+### 2. USAGE-SERVICE: Success Redemption (Happy Path)
+# Using a US IP (8.8.8.8) to match the coupon's country.
+POST http://localhost:8082/api/v1/usage/redeem?code=SUMMER2026
+X-Forwarded-For: 8.8.8.8
+
+###
+
+### 3. USAGE-SERVICE: Idempotency Check (Duplicate User)
+# Second attempt with the same IP should return 409 Conflict.
+POST http://localhost:8082/api/v1/usage/redeem?code=SUMMER2026
+X-Forwarded-For: 8.8.8.8
+
+###
+
+### 4. USAGE-SERVICE: Business Rule Violation (Wrong Country)
+# Using a Polish IP for a US-only coupon. Should return 400 Bad Request.
+POST http://localhost:8082/api/v1/usage/redeem?code=SUMMER2026
+X-Forwarded-For: 31.0.0.1
+
+###
+
+### 5. USAGE-SERVICE: Resilience Test (Circuit Breaker)
+# STEP: Stop 'coupon-service' application.
+# Expected: Fallback response (503 Service Unavailable) instead of 500 error.
+POST http://localhost:8082/api/v1/usage/redeem?code=SUMMER2026
+X-Forwarded-For: 8.8.8.8
+
+###
+
+### 6. ACTUATOR: Check Circuit Breaker Status
+# Requires 'spring-boot-starter-actuator' and 'management.endpoints.web.exposure.include=health'
+GET http://localhost:8082/actuator/health

@@ -1,3 +1,6 @@
+server:
+  port: 8081
+
 spring:
   application:
     name: usage-service
@@ -22,11 +25,6 @@ spring:
     import-check:
       enabled: false
 #    import: configserver:${CONFIG_SERVER_URL}
-#  datasource:
-#    url: jdbc:h2:mem:coupondb
-#    driverClassName: org.h2.Driver
-#    username: sa
-#    password: password
 
   jpa:
     hibernate:
@@ -51,21 +49,10 @@ spring:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
 
-#  jpa:
-#    hibernate:
-#      ddl-auto: update
-#    show-sql: true
-#    properties:
-#      hibernate:
-#        format_sql: true
-
 eureka:
   client:
     register-with-eureka: false
     fetch-registry: false
-
-server:
-  port: 8081
 
 app:
   coupon-service:
@@ -87,6 +74,22 @@ resilience4j:
       geoip:
         maxAttempts: 2
         waitDuration: 500ms
+  circuitbreaker:
+    instances:
+      geoipCB:
+        registerHealthIndicator: true
+        slidingWindowSize: 10
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10000ms
+        permittedNumberOfCallsInHalfOpenState: 3
+      internalServiceCB:
+        registerHealthIndicator: true      # Exposes circuit breaker status via Actuator /health endpoint
+        slidingWindowSize: 10              # Number of calls to record and analyze for the threshold
+        failureRateThreshold: 50           # Opens the circuit if 50% or more calls fail
+        waitDurationInOpenState: 10000ms   # Time to wait before transitioning from OPEN to HALF_OPEN
+        permittedNumberOfCallsInHalfOpenState: 3 # Number of test calls allowed to verify service recovery
+        slowCallRateThreshold: 100         # Percentage of slow calls required to open the circuit
+        slowCallDurationThreshold: 2000ms  # Maximum duration allowed before a call is considered "slow"
 
 # Feign
 feign:
