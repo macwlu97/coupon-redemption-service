@@ -53,8 +53,6 @@ public class UsageController {
 
         String ip = extractIp(request);
         // FIXED: Method name changed from redeemCoupon to redeem to match service
-        usageService.redeem(code, ip);
-
         String detectedCountry = usageService.redeem(code, ip);
 
         return ResponseEntity.ok(new UsageResponse(
