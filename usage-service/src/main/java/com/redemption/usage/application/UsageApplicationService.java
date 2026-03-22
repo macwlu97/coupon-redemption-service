@@ -24,7 +24,7 @@ public class UsageApplicationService {
      * Main entry point for redeeming a coupon in a microservice architecture.
      */
     @Transactional
-    public void redeem(String couponCode, String userIp) {
+    public String redeem(String couponCode, String userIp) {
         log.info("Starting redemption flow for code: {} from IP: {}", couponCode, userIp);
 
         // 1. Resolve Location (Infrastructure Layer)
@@ -58,5 +58,7 @@ public class UsageApplicationService {
         usageRepository.save(history);
 
         log.info("Redemption successfully completed for IP: {}", userIp);
+
+        return country;
     }
 }

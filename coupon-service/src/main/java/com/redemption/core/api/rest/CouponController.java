@@ -4,6 +4,8 @@ import com.redemption.core.api.rest.dto.CreateCouponRequest;
 import com.redemption.core.api.rest.dto.CouponResponse;
 import com.redemption.core.application.CouponApplicationService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -27,7 +29,11 @@ public class CouponController {
      * Added explicit @Valid to trigger Spring Validation on the record.
      */
     @Operation(summary = "Create a new coupon", description = "Defines a new coupon with a specific usage limit and target country code.")
-    @ApiResponse(responseCode = "201", description = "Coupon created successfully")
+    @ApiResponse(
+            responseCode = "201",
+            description = "Coupon created successfully",
+            content = @Content(schema = @Schema(implementation = CouponResponse.class))
+    )
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public CouponResponse create(@RequestBody @Valid CreateCouponRequest request) {

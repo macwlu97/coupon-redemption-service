@@ -3,6 +3,8 @@ package com.redemption.core.api.internal;
 import com.redemption.core.application.CouponApplicationService;
 import com.redemption.core.api.internal.dto.CouponInternalResponse;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
@@ -19,9 +21,19 @@ public class InternalCouponController {
      * Dedicated endpoint for usage-service inter-service communication.
      */
     @PostMapping("/{code}/validate-and-increment")
-    @Operation(summary = "Validate and increment usage", description = "Internal endpoint to check coupon validity and increment its usage counter atomically.")
+    @Operation(
+            summary = "Validate and increment usage",
+            description = "Internal endpoint to check coupon validity and increment its usage counter atomically. " +
+                    "This endpoint is used by usage-service during the redemption process."
+    )
+    @ApiResponse(
+            responseCode = "200",
+            description = "Operation processed. Check the 'success' field for logical result."
+    )
     public CouponInternalResponse validateAndIncrement(
+            @Parameter(description = "The coupon code to validate", example = "SUMMER2026")
             @PathVariable String code,
+            @Parameter(description = "ISO country code of the user", example = "PL")
             @RequestParam String countryCode) {
         return service.processInternalRedemption(code, countryCode);
     }
