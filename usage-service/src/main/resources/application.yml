@@ -110,3 +110,10 @@ management:
       show-details: always
     metrics:
       enabled: true
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    operationsSorter: method
+  api-docs:
+    path: /v3/api-docs

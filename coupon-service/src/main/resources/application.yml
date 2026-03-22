@@ -29,16 +29,6 @@ spring:
     password: pswd
     driver-class-name: org.postgresql.Driver
 
-#  jpa:
-#    hibernate:
-#      ddl-auto: validate
-
-#  datasource:
-#    url: jdbc:h2:mem:coupondb
-#    driverClassName: org.h2.Driver
-#    username: sa
-#    password: password
-
   jpa:
     hibernate:
       ddl-auto: create-drop
@@ -86,3 +76,10 @@ management:
       show-details: always
     metrics:
       enabled: true
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    operationsSorter: method
+  api-docs:
+    path: /v3/api-docs
