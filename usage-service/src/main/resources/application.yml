@@ -70,6 +70,23 @@ server:
 app:
   coupon-service:
     url: http://localhost:8082
+  geoip:
+    proxy:
+      enabled: true
+      host: 1.231.81.166
+      port: 3128
+    ip-api:
+      url: https://ipapi.co/
+    abstract-api:
+      url: https://ip-intelligence.abstractapi.com
+      key: 82fcff2895fd408b8aff6c1dd78e3292 #${ABSTRACT_API_KEY:your_default_key}
+
+resilience4j:
+  retry:
+    instances:
+      geoip:
+        maxAttempts: 2
+        waitDuration: 500ms
 
 # Feign
 feign:

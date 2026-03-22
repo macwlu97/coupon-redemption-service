@@ -4,7 +4,7 @@ import com.redemption.usage.domain.exception.UsageException;
 import com.redemption.usage.domain.model.UsageHistory;
 import com.redemption.usage.domain.repository.UsageHistoryRepository;
 import com.redemption.usage.infrastructure.external.CouponServiceClient;
-import com.redemption.usage.infrastructure.external.GeoIpClient;
+import com.redemption.usage.infrastructure.external.GeoIpService;
 import com.redemption.usage.infrastructure.external.dto.CouponInternalResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -18,7 +18,7 @@ public class UsageApplicationService {
 
     private final UsageHistoryRepository usageRepository;
     private final CouponServiceClient couponClient;
-    private final GeoIpClient geoIpClient;
+    private final GeoIpService geoIpService;
 
     /**
      * Main entry point for redeeming a coupon in a microservice architecture.
@@ -29,7 +29,7 @@ public class UsageApplicationService {
 
         // 1. Resolve Location (Infrastructure Layer)
         // Moved here to decouple coupon-service from GeoIP concerns.
-        String country = geoIpClient.fetchCountryCode(userIp);
+        String country = geoIpService.getCountryCode(userIp);
 
         // 2. Idempotency check (Domain Layer)
         // Ensure this specific user/IP hasn't used this coupon already.
