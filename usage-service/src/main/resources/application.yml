@@ -22,14 +22,30 @@ spring:
     import-check:
       enabled: false
 #    import: configserver:${CONFIG_SERVER_URL}
-
   datasource:
-    primary:
-      url: jdbc:postgresql://localhost:5432/usage_db
-      username: maciejwnuklipinski
-      password: pswd
-      hikari:
-        maximum-pool-size: 10
+    url: jdbc:h2:mem:coupondb
+    driverClassName: org.h2.Driver
+    username: sa
+    password: password
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+    defer-datasource-initialization: true
+  sql:
+    init:
+      mode: always
+#  datasource:
+#    primary:
+#      url: jdbc:postgresql://localhost:5432/usage_db
+#      username: maciejwnuklipinski
+#      password: pswd
+#      hikari:
+#        maximum-pool-size: 10
 
   kafka:
     bootstrap-servers: localhost:9092
@@ -37,13 +53,13 @@ spring:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.apache.kafka.common.serialization.StringSerializer
 
-  jpa:
-    hibernate:
-      ddl-auto: update
-    show-sql: true
-    properties:
-      hibernate:
-        format_sql: true
+#  jpa:
+#    hibernate:
+#      ddl-auto: update
+#    show-sql: true
+#    properties:
+#      hibernate:
+#        format_sql: true
 
 eureka:
   client:
@@ -52,6 +68,18 @@ eureka:
 
 server:
   port: 8081
+
+app:
+  coupon-service:
+    url: http://localhost:8082
+
+# Feign
+feign:
+  client:
+    config:
+      default:
+        connectTimeout: 2000
+        readTimeout: 5000
 
 management:
   endpoints:

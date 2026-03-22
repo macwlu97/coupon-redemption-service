@@ -1,18 +1,35 @@
-package com.redemption.core.infrastructure.external;
+package com.redemption.usage.infrastructure.external;
 
+import com.redemption.usage.infrastructure.external.dto.GeoIpResponse;
 import io.github.resilience4j.retry.annotation.Retry;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+
+import java.net.InetSocketAddress;
+import java.net.Proxy;
 
 @Slf4j
 @Component
 public class GeoIpClient {
     private final RestClient restClient;
+    private static final String GEO_IP_URL = "https://ipapi.co/"; //yml
 
     public GeoIpClient(RestClient.Builder builder) {
-        this.restClient = builder.baseUrl("https://ipapi.co/").build();
+        // 1. Definicja serwera proxy (wybierz jeden z tabeli powyżej)
+        String proxyHost = "1.231.81.166";
+        int proxyPort = 3128;
+
+        Proxy proxy = new Proxy(Proxy.Type.HTTP, new InetSocketAddress(proxyHost, proxyPort));
+
+        // 2. Konfiguracja fabryki żądań z obsługą proxy
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setProxy(proxy);
+        factory.setConnectTimeout(5000); // Darmowe proxy bywają wolne
+
+        this.restClient = builder.requestFactory(factory).baseUrl(GEO_IP_URL).build();
     }
 
     /**

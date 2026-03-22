@@ -1,74 +1,79 @@
 package com.redemption.core.application;
 
+import com.redemption.core.api.internal.dto.CouponInternalResponse;
 import com.redemption.core.api.rest.dto.CreateCouponRequest;
 import com.redemption.core.api.rest.dto.CouponResponse;
 import com.redemption.core.domain.exception.CouponException;
 import com.redemption.core.domain.model.Coupon;
 import com.redemption.core.domain.repository.CouponRepository;
-import com.redemption.core.infrastructure.external.GeoIpClient;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
-import java.util.List;
-
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class CouponApplicationService {
 
     private final CouponRepository repository;
-    private final GeoIpClient geoIpClient;
 
     /**
-     * Coupon redemption - business logic.
+     * Handles internal redemption request from usage-service.
+     * Validates business rules and increments usage in a single transaction.
+     * Uses Java 21 features and handles concurrency via Optimistic Locking.
      */
     @Transactional
-    public void processRedemption(String code, String ip) {
-        // 1. Fetching the country from an external API.
-        String countryCode = geoIpClient.fetchCountryCode(ip);
+    public CouponInternalResponse processInternalRedemption(String code, String countryCode) {
+        try {
+            // Finding coupon using Java 21 Optional
+            var coupon = repository.findByCode(code.toUpperCase())
+                    .orElseThrow(() -> new CouponException.NotFound(code));
 
-        // 2. Finding the coupon (using Java 21 Optional).
-        Coupon coupon = repository.findByCode(code.toUpperCase())
-                .orElseThrow(() -> new CouponException.NotFound(code));
+            // Domain logic execution (DDD approach)
+            coupon.redeem(countryCode);
 
-        // 3. Executing logic within the domain model (DDD).
-        coupon.redeem(countryCode);
+            // Persistence - @Version in Coupon entity handles optimistic locking
+            repository.save(coupon);
 
-        // 4. Saving changes (Hibernate will handle @Version automatically).
-        repository.save(coupon);
+            log.info("Redemption successful for coupon: {}", code);
+            return CouponInternalResponse.ok();
+
+        } catch (CouponException e) {
+            log.warn("Business rule violation: {}", e.getMessage());
+            return CouponInternalResponse.failure(e.getCode(), e.getMessage());
+        } catch (ObjectOptimisticLockingFailureException e) {
+            log.error("Concurrency conflict for coupon: {}", code);
+            return CouponInternalResponse.failure("CONCURRENCY_ERROR", "Concurrent update detected");
+        } catch (Exception e) {
+            log.error("System error during redemption", e);
+            return CouponInternalResponse.failure("SYSTEM_ERROR", "Unexpected failure");
+        }
     }
 
-    /**
-     * Creates a new coupon and maps it to a DTO.
-     */
     @Transactional
     public CouponResponse createCoupon(CreateCouponRequest request) {
         repository.findByCode(request.code().toUpperCase())
-                .ifPresent(c -> { throw new IllegalStateException("Coupon already exists"); });
+                .ifPresent(c -> { throw new CouponException.AlreadyExists(request.code()); });
 
-        Coupon newCoupon = new Coupon(
+        var newCoupon = new Coupon(
                 request.code(),
                 request.usageLimit(),
                 request.targetCountry()
         );
 
-        Coupon saved = repository.save(newCoupon);
-        return mapToResponse(saved);
+        return mapToResponse(repository.save(newCoupon));
     }
 
-    /**
-     * Retrieves all coupons.
-     */
     @Transactional(readOnly = true)
-    public List<CouponResponse> findAll() {
-        return repository.findAll().stream()
-                .map(this::mapToResponse)
-                .toList(); // Java 21 stream to list
+    public Page<CouponResponse> findAll(Pageable pageable) {
+        return repository.findAll(pageable)
+                .map(this::mapToResponse);
     }
 
-    /**
-     * Private helper method for mapping (a mapper).
-     */
     private CouponResponse mapToResponse(Coupon coupon) {
         return new CouponResponse(
                 coupon.getCode(),

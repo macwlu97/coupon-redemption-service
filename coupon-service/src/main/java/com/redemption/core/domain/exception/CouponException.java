@@ -2,6 +2,10 @@ package com.redemption.core.domain.exception;
 
 import lombok.Getter;
 
+/**
+ * Sealed class hierarchy for domain-specific business errors.
+ * This ensures that all possible coupon errors are known at compile time.
+ */
 @Getter
 public sealed abstract class CouponException extends RuntimeException {
     private final String code;
@@ -12,8 +16,8 @@ public sealed abstract class CouponException extends RuntimeException {
     }
 
     public static final class LimitExceeded extends CouponException {
-        public LimitExceeded(String code) {
-            super("Limit reached for coupon: " + code, code);
+        public LimitExceeded(String couponCode) {
+            super("Usage limit reached for coupon: " + couponCode, "LIMIT_EXCEEDED");
         }
     }
 
@@ -24,8 +28,14 @@ public sealed abstract class CouponException extends RuntimeException {
     }
 
     public static final class NotFound extends CouponException {
-        public NotFound(String code) {
-            super("Coupon not found: " + code, code);
+        public NotFound(String couponCode) {
+            super("Coupon not found: " + couponCode, "NOT_FOUND");
+        }
+    }
+
+    public static final class AlreadyExists extends CouponException {
+        public AlreadyExists(String couponCode) {
+            super("Coupon with code " + couponCode + " already exists", "ALREADY_EXISTS");
         }
     }
 }

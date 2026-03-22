@@ -7,43 +7,39 @@ import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
-import java.net.URI;
-
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
     /**
-     * Handles domain-specific business exceptions.
+     * Handles domain business exceptions using Java 21 Pattern Matching.
      */
     @ExceptionHandler(CouponException.class)
     public ProblemDetail handleCouponException(CouponException ex) {
-        // Using Java 21 pattern matching for switch
         HttpStatus status = switch (ex) {
             case CouponException.NotFound ignored -> HttpStatus.NOT_FOUND;
             case CouponException.InvalidCountry ignored -> HttpStatus.BAD_REQUEST;
             case CouponException.LimitExceeded ignored -> HttpStatus.CONFLICT;
+            case CouponException.AlreadyExists ignored -> HttpStatus.CONFLICT;
         };
 
-        ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, ex.getMessage());
-        problem.setTitle("Coupon Business Error");
+        var problem = ProblemDetail.forStatusAndDetail(status, ex.getMessage());
+        problem.setTitle("Coupon Business Rule Violation");
         problem.setProperty("error_code", ex.getCode());
         return problem;
     }
 
     /**
      * Handles Concurrency issues (Optimistic Locking).
-     * This happens when two users try to redeem the same coupon simultaneously.
+     * Vital for high-scalability systems where multiple nodes update the same record.
      */
     @ExceptionHandler(ObjectOptimisticLockingFailureException.class)
     public ProblemDetail handleConcurrencyConflict(ObjectOptimisticLockingFailureException ex) {
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(
                 HttpStatus.CONFLICT,
-                "The coupon is currently being processed by another request. Please try again."
+                "The coupon is being updated by another request. Please retry."
         );
         problem.setTitle("Concurrency Conflict");
         problem.setProperty("error_code", "CONCURRENT_UPDATE");
-        // Good practice for Senior level: point to documentation or help
-        problem.setType(URI.create("https://api.redemption.com/errors/concurrency"));
         return problem;
     }
 }

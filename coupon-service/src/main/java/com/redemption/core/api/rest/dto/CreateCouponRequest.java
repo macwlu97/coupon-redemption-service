@@ -4,6 +4,10 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
+/**
+ * DTO for creating a new coupon.
+ * Using Java 21 Record for immutability and boilerplate reduction.
+ */
 public record CreateCouponRequest(
         @NotBlank @Size(min = 3, max = 20) String code,
         @Min(1) int usageLimit,

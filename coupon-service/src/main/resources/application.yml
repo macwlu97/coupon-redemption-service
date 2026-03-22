@@ -41,7 +41,6 @@ spring:
     username: sa
     password: password
 
-    # JPA i SQL muszą być TUTAJ (na tym samym poziomie co datasource)
   jpa:
     hibernate:
       ddl-auto: create-drop
@@ -76,7 +75,7 @@ resilience4j:
           - java.io.IOException
 
 server:
-  port: 8081
+  port: 8082
 
 management:
   endpoints:
