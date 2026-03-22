@@ -23,23 +23,21 @@ spring:
       enabled: false
 #    import: configserver:${CONFIG_SERVER_URL}
 
-#  datasource:
-#    primary:
-#      url: jdbc:postgresql://localhost:5432/coupon_db
-#      username: maciejwnuklipinski
-#      password: pswd
-#      hikari:
-#        maximum-pool-size: 10
+  datasource:
+    url: jdbc:postgresql://localhost:5432/coupon_db
+    username: maciejwnuklipinski
+    password: pswd
+    driver-class-name: org.postgresql.Driver
 
 #  jpa:
 #    hibernate:
 #      ddl-auto: validate
 
-  datasource:
-    url: jdbc:h2:mem:coupondb
-    driverClassName: org.h2.Driver
-    username: sa
-    password: password
+#  datasource:
+#    url: jdbc:h2:mem:coupondb
+#    driverClassName: org.h2.Driver
+#    username: sa
+#    password: password
 
   jpa:
     hibernate:
