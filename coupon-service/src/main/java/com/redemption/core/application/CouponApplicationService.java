@@ -43,16 +43,34 @@ public class CouponApplicationService {
             log.info("Redemption successful for coupon: {}", code);
             return CouponInternalResponse.ok();
 
-        } catch (ObjectOptimisticLockingFailureException e) {
-            log.error("Concurrency conflict for coupon: {}", code);
-            return CouponInternalResponse.failure("CONCURRENCY_ERROR", "Concurrent update detected");
-        } catch (CouponException e) {
-            log.warn("Business rule violation: {}", e.getMessage());
-            return CouponInternalResponse.failure(e.getCode(), e.getMessage());
         } catch (Exception e) {
-            log.error("System error during redemption", e);
-            return CouponInternalResponse.failure("SYSTEM_ERROR", "Unexpected failure");
+            return handleException(e, code);
         }
+
+    }
+
+    private CouponInternalResponse handleException(Exception e, String code) {
+        // Pattern Matching (Java 17/21)
+        return switch (e) {
+            case CouponException.NotFound ex -> {
+                log.warn("Coupon not found: {}", code);
+                yield CouponInternalResponse.failure("COUPON_NOT_FOUND", ex.getMessage());
+            }
+            case CouponException.InvalidCountry ex -> {
+                log.warn("Country mismatch for coupon: {}", code);
+                yield CouponInternalResponse.failure("INVALID_COUNTRY", ex.getMessage());
+            }
+            case CouponException.LimitExceeded ex -> {
+                log.warn("Limit exceeded for: {}", code);
+                yield CouponInternalResponse.failure("LIMIT_EXCEEDED", ex.getMessage());
+            }
+            case ObjectOptimisticLockingFailureException ex ->
+                    CouponInternalResponse.failure("CONCURRENCY_ERROR", "Retry needed");
+            default -> {
+                log.error("Unexpected error", e);
+                yield CouponInternalResponse.failure("SYSTEM_ERROR", "Internal error");
+            }
+        };
     }
 
     @Transactional

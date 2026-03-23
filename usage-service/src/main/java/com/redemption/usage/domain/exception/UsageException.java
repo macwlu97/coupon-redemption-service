@@ -26,6 +26,14 @@ public sealed abstract class UsageException extends RuntimeException {
         }
     }
 
+
+    public static final class NotFound extends UsageException {
+        public NotFound(String couponCode) {
+            super("Coupon not found: " + couponCode, "NOT_FOUND");
+        }
+    }
+
+
     public static final class RemoteServiceError extends UsageException {
         public RemoteServiceError(String message, String errorCode) {
             super(message, errorCode); // errorCode to np. "LIMIT_EXCEEDED"

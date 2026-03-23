@@ -6,6 +6,7 @@ import com.redemption.usage.domain.repository.UsageHistoryRepository;
 import com.redemption.usage.infrastructure.external.CouponServiceClient;
 import com.redemption.usage.infrastructure.external.GeoIpService;
 import com.redemption.usage.infrastructure.external.dto.CouponInternalResponse;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import io.github.resilience4j.retry.annotation.Retry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -26,6 +27,8 @@ public class UsageApplicationService {
      * We REMOVE @Transactional from here to avoid holding DB connections during network I/O.
      */
     @Retry(name = "couponServiceRetry")
+    @CircuitBreaker(name = "internalServiceCB", fallbackMethod = "handleRedeemFallback")
+    @Transactional
     public String redeem(String couponCode, String userIp) {
         String code = couponCode.toUpperCase();
         log.info("Starting redemption flow for code: {} from IP: {}", couponCode, userIp);
@@ -65,5 +68,16 @@ public class UsageApplicationService {
         log.info("Redemption successful for IP: {}", userIp);
 
         return country;
+    }
+
+    public String handleRedeemFallback(String code, String ip, Throwable t) throws Throwable {
+        if (t instanceof UsageException.AlreadyRedeemed ||
+                t instanceof UsageException.ConcurrencyConflict) {
+            log.info("Business exception {} for code {}. Skipping fallback.", t.getClass().getSimpleName(), code);
+            throw t;
+        }
+
+        log.error("Circuit is OPEN or Service failed. Reason: {}", t.getMessage());
+        throw new UsageException.RemoteServiceError("Service unavailable", "TRY_LATER");
     }
 }

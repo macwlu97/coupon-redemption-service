@@ -60,7 +60,7 @@ class CouponServiceTest {
 
         // Then
         assertThat(response.success()).isFalse();
-        assertThat(response.errorCode()).isEqualTo("NOT_FOUND");
+        assertThat(response.errorCode()).isEqualTo("COUPON_NOT_FOUND");
         verify(couponRepository, never()).save(any());
     }
 

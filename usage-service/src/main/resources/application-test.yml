@@ -75,6 +75,9 @@ coupon-service:
 
 resilience4j:
   retry:
+    retry-aspect-order: 399
+    circuitbreaker:
+      circuit-breaker-aspect-order: 400
     instances:
       couponServiceRetry:
         maxAttempts: 3
