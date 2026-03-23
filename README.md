@@ -1,97 +1,150 @@
-# Coupon Redemption System (Enterprise Microservices)
+# 🎫 Coupon Redemption System (Enterprise Microservices)
 
-A scalable, high-concurrency distributed system for managing and redeeming discount coupons. Built with **Java 21**, **Spring Boot 3.4**, and **Spring Cloud**, following **Domain-Driven Design (DDD)** principles.
+A high-performance, distributed system designed to manage and track the lifecycle of discount coupons. This project demonstrates a modern approach to building scalable microservices using **Java 21**, **Spring Boot 3.4**, and **Spring Cloud**, with a strong emphasis on **Domain-Driven Design (DDD)** and **Clean Architecture**.
 
-
+-----
 
 ## 🚀 Architectural Highlights
 
-* **Microservices Architecture**: Decoupled services for Coupon management and Usage tracking.
-* **Domain-Driven Design (DDD)**: Logic encapsulated within Rich Domain Models (Agregates) to avoid anemic models.
-* **Java 21 Features**: Utilizes `Sealed Classes`, `Records`, `Pattern Matching`, and `Virtual Threads` compatibility.
-* **High Concurrency Handling**: Implements **Optimistic Locking** (`@Version`) to prevent race conditions during peak redemption periods.
-* **Resilience**: Integrated **Resilience4j** for Retries and Circuit Breakers when calling external GeoIP providers.
-* **Clean Architecture**: Strict separation between API, Application, Domain, and Infrastructure layers.
+* **Microservices Architecture**: The system is decomposed into specialized services (`coupon-service` and `usage-service`) to allow independent scaling, deployment, and database isolation.
+* **Domain-Driven Design (DDD)**: Business logic is encapsulated within **Rich Domain Models** and **Aggregates**. This ensures that invariants (like usage limits and country restrictions) are enforced at the core of the application, avoiding "Anemic Domain Models."
+* **Concurrency & Data Integrity**: Uses **Optimistic Locking** (`@Version`) to handle high-traffic redemption spikes. This prevents the "over-redeem" problem where multiple threads might decrement a counter simultaneously without database deadlocks.
+* **Resilience & Fault Tolerance**: Powered by **Resilience4j**, the system implements **Circuit Breakers** and **Retries** for external GeoIP API calls. This prevents the "cascading failure" effect if the location provider goes down.
+* **Event-Driven Evolution**: Successful redemptions are published as events to **Apache Kafka**, allowing for asynchronous processing by audit or analytics services without increasing latency for the end-user.
 
----
+-----
 
-## 🏗️ Project Structure
+## 🏗️ System Components & Tech Stack
 
-The system consists of the following modules:
+| Module | Responsibility | Port |
+| :--- | :--- | :--- |
+| **`api-gateway`** | Central entry point. Handles request routing, load balancing, and cross-cutting concerns. | 8080 |
+| **`eureka-server`** | Service Discovery. Allows microservices to find and communicate with each other dynamically. | 8761 |
+| **`coupon-service`** | The Source of Truth for coupon definitions, stock management, and country rules. | 8082 |
+| **`usage-service`** | Handles the redemption flow, GeoIP location logic, and per-user anti-fraud tracking. | 8081 |
 
-* **`api-gateway`**: Single entry point for all client requests.
-* **`eureka-server`**: Service discovery and registration.
-* **`coupon-service`**: Source of truth for coupon definitions, limits, and country-based validation.
-* **`usage-service`**: Audit log and user-specific redemption tracking (Anti-fraud).
+**Technologies:**
 
----
+* **Java 21**: Leveraging Virtual Threads (Project Loom) compatibility and modern syntax (Records, Pattern Matching).
+* **Spring Boot 3.4**: Core framework for microservice development.
+* **PostgreSQL**: Relational storage for ACID-compliant transactions.
+* **Apache Kafka**: Distributed event streaming.
+* **OpenFeign**: Declarative REST client for inter-service communication.
+* **SpringDoc OpenAPI**: Automatic Swagger documentation.
 
-## 🛠️ Tech Stack
+-----
 
-| Technology | Usage |
-| :--- | :--- |
-| **Java 21** | Modern language features (LTS) |
-| **Spring Boot 3.4** | Core framework |
-| **Spring Data JPA** | Persistence with Hibernate |
-| **H2 / PostgreSQL** | Database (Relational) |
-| **Spring Cloud** | Gateway, Eureka, OpenFeign |
-| **RestClient** | Modern, functional HTTP client |
-| **Lombok** | Boilerplate reduction |
+## 🏛️ Architectural Decisions & Design Patterns
 
----
+### 1\. Clean Architecture (Layered)
+
+The project follows a strict separation of concerns:
+
+* **Domain Layer**: Pure business logic (Entities, Value Objects, Domain Exceptions).
+* **Application Layer**: Orchestration (Use Cases, Services).
+* **Infrastructure Layer**: Adapters for Databases, Kafka, and External APIs.
+* **Why?** This ensures the business logic remains testable and independent of external frameworks or UI changes.
+
+### 2\. Strategy Pattern (GeoIP Providers)
+
+The location detection logic is decoupled from the service using the **Strategy Pattern**.
+
+* **Why?** It allows the system to switch between different GeoIP providers (ipapi, MaxMind, or Mock) without changing the core redemption logic. It also facilitates easy local testing via a fallback strategy for `127.0.0.1`.
+
+### 3\. Transactional Integrity
+
+Redemption involves checking a limit in one service and recording usage in another. To handle this in a distributed environment:
+
+* **Optimistic Locking** ensures the coupon counter is never decremented incorrectly.
+* **Idempotency** is baked into the redemption flow to prevent double-spending in case of network retries.
+
+### 4\. RFC 7807 (Problem Details)
+
+All business exceptions (e.g., `LIMIT_EXCEEDED`, `INVALID_COUNTRY`) are mapped to the **RFC 7807** standard.
+
+* **Why?** Provides a machine-readable and consistent error format for API consumers.
+
+-----
 
 ## 🚦 Getting Started
 
 ### Prerequisites
-* JDK 21
-* Maven 3.9+
 
-### Running the System
-1.  **Start Eureka Server**:
-    ```bash
-    cd eureka-server && mvn spring-boot:run
-    ```
-2.  **Start Coupon Service**:
-    ```bash
-    cd coupon-service && mvn spring-boot:run
-    ```
-3.  **Start Usage Service**:
-    ```bash
-    cd usage-service && mvn spring-boot:run
-    ```
+* Docker & Docker Compose
+* JDK 21 (if running locally)
 
----
+### Quick Start (Docker Compose)
 
-## 🧪 API Endpoints
+The entire infrastructure (DBs, Kafka, Services) can be launched with a single command:
 
-### 1. Create a New Coupon
-**POST** `/api/v1/coupons`
-```json
-{
-  "code": "SUMMER2026",
-  "usageLimit": 100,
-  "targetCountry": "PL"
-}
+```bash
+docker-compose up --build -d
 ```
 
-### 2. Redeem a Coupon
-**POST** `/api/v1/coupons/{code}/redeem`
-*The system automatically detects user country via GeoIP based on the Request IP.*
+*Wait \~40 seconds for Eureka registration to complete.*
 
----
+-----
 
-## 🛡️ Business Rules & Validation
+## 🧪 API Documentation & Testing
 
-1.  **Unique Codes**: Coupon codes are case-insensitive and unique.
-2.  **Geo-Fencing**: Coupons can only be redeemed by users from the designated country (verified via `ipapi.co`).
-3.  **Usage Limits**: "First come, first served" logic. Once the limit is reached, a `409 Conflict` is returned.
-4.  **Error Handling**: Returns standard **RFC 7807 Problem Details** for all business exceptions.
+### Interactive Documentation (Swagger)
 
----
+Each service provides a comprehensive UI for API exploration:
+
+* **Coupon Service**: [http://localhost:8082/swagger-ui.html](https://www.google.com/search?q=http://localhost:8082/swagger-ui.html)
+* **Usage Service**: [http://localhost:8081/swagger-ui.html](https://www.google.com/search?q=http://localhost:8081/swagger-ui.html)
+
+### Automated Smoke Test
+
+I have provided a bash script to verify the entire business flow (Creation -\> Successful Redemption -\> Limit Reached -\> Duplicate User Rejection):
+
+```bash
+chmod +x smoke-test.sh
+./smoke-test.sh
+```
+
+### Manual cURL Example (Geo-Fencing)
+
+To test country restrictions, use the `X-Forwarded-For` header:
+
+```bash
+# Valid Polish IP
+curl -X POST http://localhost:8080/usage-service/api/v1/usages/SUMMER2026/redeem \
+  -H "User-Id: user_99" \
+  -H "X-Forwarded-For: 89.64.12.150" \
+  -H "Content-Type: application/json" -d '{}'
+```
+
+-----
+
+## 🛡️ Business Rules Enforcement
+
+1.  **Case-Insensitivity**: Coupon `SUMMER` and `summer` are treated as the same unique entity.
+2.  **Geo-Fencing**: Redemptions are strictly limited to the country defined during coupon creation (detected via IP).
+3.  **Stock Protection**: "First-come, first-served." Once the usage limit is reached, all subsequent attempts return `409 Conflict`.
+4.  **Anti-Fraud**: A specific `User-Id` cannot redeem the same coupon code twice, even if the total limit is not reached.
+
+-----
 
 ## 📝 Implementation Notes (For Reviewers)
-* **Optimistic Locking**: Used to handle many users redeeming the same coupon simultaneously without blocking the database.
-* **Idempotency**: Designed to be idempotent in the redemption flow to prevent double-spending.
-* **External Integration**: The `GeoIpClient` uses a fallback for `localhost` (127.0.0.1) to return "PL" for easier local testing.
 
----
+* **Concurrency**: The system is designed to handle high-volume traffic using non-blocking principles where possible.
+* **Testing Philosophy**: Unit tests cover complex domain logic (JUnit 5), while Integration tests (Testcontainers) verify database and Kafka interactions.
+* **Observability**: Standard Spring Boot Actuator endpoints are enabled for health monitoring.
+
+-----
+
+This project was built with the mindset of a **production-ready** application, prioritizing code quality, maintainability, and system resilience.
+
+## 📖 Project Documentation & Testing
+
+For detailed technical information, architecture diagrams, and testing procedures, please refer to the following documents:
+
+| Document                                          | Description |
+|:--------------------------------------------------| :--- |
+| **[🏗️ Architecture Guide](DOC/ARCHITECTURE.md)** | Deep dive into **C4 Model** diagrams, DDD layers, and Design Patterns used (Strategy, Locking, etc.). |
+| **[🧪 API Testing Guide](DOC/API_TESTING.md)**    | A complete list of **cURL** commands to manually verify every business requirement and edge case. |
+| **[🚀 Smoke Test Script](./smoke-test.sh)**       | Automated bash script to verify the entire system flow in seconds. |
+
+
+

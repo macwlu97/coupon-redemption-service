@@ -1,45 +1,109 @@
-### 1. COUPON-SERVICE: Create a new coupon
-# Create a coupon for the US with a limit of 2 uses.
-POST http://localhost:8081/api/v1/coupons
+### 1. CREATE COUPON (Base Setup)
+# Creates a coupon with a limit of 2 uses for Poland (PL).
+# Testing uniqueness and initial state.
+POST http://localhost:8082/api/v1/coupons
 Content-Type: application/json
 
 {
   "code": "SUMMER2026",
-  "limit": 2,
-  "countryCode": "US"
+  "usageLimit": 2,
+  "targetCountry": "PL"
 }
 
-###
+> {%
+    client.test("Request executed successfully", function() {
+        client.assert(response.status === 201 || response.status === 409, "Status should be 201 (Created) or 409 (Already Exists)");
+    });
+%}
 
-### 2. USAGE-SERVICE: Success Redemption (Happy Path)
-# Using a US IP (8.8.8.8) to match the coupon's country.
-POST http://localhost:8082/api/v1/usage/redeem?code=SUMMER2026
-X-Forwarded-For: 8.8.8.8
+---
 
-###
+### 2. VALID REDEMPTION (User 1 - Success)
+# Testing successful redemption from a Polish IP.
+# We use X-Forwarded-For to simulate a real Polish public IP.
+POST http://localhost:8081/api/v1/usages/SUMMER2026/redeem
+X-Forwarded-For: 89.64.12.150
+User-Id: candidate_001
+Content-Type: application/json
 
-### 3. USAGE-SERVICE: Idempotency Check (Duplicate User)
-# Second attempt with the same IP should return 409 Conflict.
-POST http://localhost:8082/api/v1/usage/redeem?code=SUMMER2026
-X-Forwarded-For: 8.8.8.8
+{}
 
-###
+> {%
+    client.test("First redemption successful", function() {
+        client.assert(response.status === 200 || response.status === 201, "Should be 200/201 OK");
+    });
+%}
 
-### 4. USAGE-SERVICE: Business Rule Violation (Wrong Country)
-# Using a Polish IP for a US-only coupon. Should return 400 Bad Request.
-POST http://localhost:8082/api/v1/usage/redeem?code=SUMMER2026
-X-Forwarded-For: 31.0.0.1
+---
 
-###
+### 3. RE-USE PROTECTION (User 1 - Fail)
+# Testing business rule: "One user can use a coupon only once".
+# Expecting 409 Conflict or 422 Business Rule Violation.
+POST http://localhost:8081/api/v1/usages/SUMMER2026/redeem
+X-Forwarded-For: 89.64.12.150
+User-Id: candidate_001
+Content-Type: application/json
 
-### 5. USAGE-SERVICE: Resilience Test (Circuit Breaker)
-# STEP: Stop 'coupon-service' application.
-# Expected: Fallback response (503 Service Unavailable) instead of 500 error.
-POST http://localhost:8082/api/v1/usage/redeem?code=SUMMER2026
-X-Forwarded-For: 8.8.8.8
+{}
 
-###
+> {%
+    client.test("User cannot reuse the same coupon", function() {
+        client.assert(response.status === 409 || response.status === 422, "Should block second attempt by same user");
+    });
+%}
 
-### 6. ACTUATOR: Check Circuit Breaker Status
-# Requires 'spring-boot-starter-actuator' and 'management.endpoints.web.exposure.include=health'
-GET http://localhost:8082/actuator/health
+---
+
+### 4. INVALID COUNTRY PROTECTION (User 2 - Fail)
+# Testing business rule: "Country defined in coupon limits usage to persons from that country".
+# Using a German IP (starting with 5.147.x.x) for a Polish coupon.
+POST http://localhost:8081/api/v1/usages/SUMMER2026/redeem
+X-Forwarded-For: 5.147.160.1
+User-Id: candidate_002
+Content-Type: application/json
+
+{}
+
+> {%
+    client.test("Should reject request from foreign IP", function() {
+        client.assert(response.status === 422, "Should return 422 due to country mismatch");
+    });
+%}
+
+---
+
+### 5. LIMIT PROTECTION (User 2 - Success, then User 3 - Fail)
+# First, fill the remaining slot (2nd usage).
+POST http://localhost:8081/api/v1/usages/SUMMER2026/redeem
+X-Forwarded-For: 89.64.12.150
+User-Id: candidate_002
+Content-Type: application/json
+
+{}
+
+### Then, attempt 3rd usage (Should fail - Limit reached).
+POST http://localhost:8081/api/v1/usages/SUMMER2026/redeem
+X-Forwarded-For: 89.64.12.150
+User-Id: candidate_003
+Content-Type: application/json
+
+{}
+
+> {%
+    client.test("Should reject when limit is reached", function() {
+        client.assert(response.status === 409 || response.status === 422, "Should return Error when limit exceeded");
+    });
+%}
+
+---
+
+### 6. HISTORY CHECK
+# Verify that the history for candidate_001 contains the redemption record.
+GET http://localhost:8081/api/v1/usages/history/candidate_001
+Accept: application/json
+
+> {%
+    client.test("History contains data", function() {
+        client.assert(response.body.length > 0, "Redemption list should not be empty");
+    });
+%}

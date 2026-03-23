@@ -64,6 +64,7 @@ public class GlobalExceptionHandler {
                 case "CONCURRENCY_ERROR" -> HttpStatus.CONFLICT;   // 409
                 default -> HttpStatus.UNPROCESSABLE_ENTITY;        // 422
             };
+            default -> HttpStatus.INTERNAL_SERVER_ERROR;
         };
 
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, ex.getMessage());

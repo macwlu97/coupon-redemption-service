@@ -1,0 +1,149 @@
+services:
+  # --- DATABASES ---
+  coupon-db:
+    image: postgres:16-alpine
+    container_name: coupon-db
+    environment:
+      POSTGRES_DB: coupon_db
+      POSTGRES_USER: couponcoupontest
+      POSTGRES_PASSWORD: pswd
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U couponcoupontest -d coupon_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - redemption-network
+
+  usage-db:
+    image: postgres:16-alpine
+    container_name: usage-db
+    environment:
+      POSTGRES_DB: usage_db
+      POSTGRES_USER: usageusagetest
+      POSTGRES_PASSWORD: pswd
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U usageusagetest -d usage_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - redemption-network
+
+  # --- MESSAGING: KAFKA (Standard Confluent Images) ---
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - redemption-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+    networks:
+      - redemption-network
+
+  # --- SPRING CLOUD ---
+  eureka-server:
+    build:
+      context: .
+      dockerfile: eureka-server/Dockerfile
+    container_name: eureka-server
+    ports:
+      - "8761:8761"
+    networks:
+      - redemption-network
+
+  config-server:
+    build:
+      context: .
+      dockerfile: config-server/Dockerfile
+    container_name: config-server
+    ports:
+      - "8888:8888"
+    environment:
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+    depends_on:
+      - eureka-server
+    networks:
+      - redemption-network
+
+  # --- BUSINESS SERVICES ---
+  coupon-service:
+    build:
+      context: .
+      dockerfile: coupon-service/Dockerfile
+    container_name: coupon-service
+    ports:
+      - "8082:8082"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://coupon-db:5432/coupon_db
+      - SPRING_DATASOURCE_USERNAME=couponcoupontest
+      - SPRING_DATASOURCE_PASSWORD=pswd
+      - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
+    depends_on:
+      coupon-db:
+        condition: service_healthy
+    networks:
+      - redemption-network
+
+  usage-service:
+    build:
+      context: .
+      dockerfile: usage-service/Dockerfile
+    container_name: usage-service
+    ports:
+      - "8081:8081"
+    environment:
+      - APP_GEOIP_ENABLED=false
+      - APP_DEFAULT_COUNTRY=PL
+      - SERVER_FORWARD_HEADERS_STRATEGY=native
+      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://usage-db:5432/usage_db
+      - SPRING_DATASOURCE_USERNAME=usageusagetest
+      - SPRING_DATASOURCE_PASSWORD=pswd
+      - APP_COUPON_SERVICE_URL=http://coupon-service:8082
+      - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
+    depends_on:
+      usage-db:
+        condition: service_healthy
+      coupon-service:
+        condition: service_started
+    networks:
+      - redemption-network
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: api-gateway/Dockerfile
+    container_name: api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+    depends_on:
+      - eureka-server
+      - usage-service
+    networks:
+      - redemption-network
+
+networks:
+  redemption-network:
+    driver: bridge
