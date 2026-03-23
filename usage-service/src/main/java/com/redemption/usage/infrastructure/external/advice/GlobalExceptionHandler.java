@@ -1,12 +1,14 @@
 package com.redemption.usage.infrastructure.external.advice;
 
 import com.redemption.usage.domain.exception.UsageException;
+import com.redemption.usage.infrastructure.external.dto.CouponInternalResponse;
 import feign.FeignException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ProblemDetail;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -54,10 +56,12 @@ public class GlobalExceptionHandler {
     public ProblemDetail handleUsageException(UsageException ex) {
         HttpStatus status = switch (ex) {
             case UsageException.AlreadyRedeemed ignored -> HttpStatus.CONFLICT; // 409
+            case UsageException.ConcurrencyConflict ignored -> HttpStatus.SERVICE_UNAVAILABLE; // 503 lub 409
             case UsageException.RemoteServiceError remoteErr -> switch (remoteErr.getErrorCode()) {
                 case "NOT_FOUND" -> HttpStatus.NOT_FOUND;          // 404
                 case "LIMIT_EXCEEDED" -> HttpStatus.CONFLICT;      // 409
                 case "INVALID_COUNTRY" -> HttpStatus.BAD_REQUEST;  // 400
+                case "CONCURRENCY_ERROR" -> HttpStatus.CONFLICT;   // 409
                 default -> HttpStatus.UNPROCESSABLE_ENTITY;        // 422
             };
         };

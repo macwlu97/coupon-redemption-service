@@ -8,6 +8,10 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
+/**
+ * Domain entity representing a Coupon.
+ * Implements business logic and concurrency control via Optimistic Locking.
+ */
 @Entity
 @Table(name = "coupons")
 @Getter
@@ -38,7 +42,8 @@ public class Coupon {
     }
 
     /**
-     * Business logic: Increments usage if rules are met.
+     * Business logic: Increments usage if rules are met. Executes the redemption logic.
+     * Throws Domain Exceptions if rules are violated.
      */
     public void redeem(String userCountry) {
         validateCountry(userCountry);
@@ -53,7 +58,7 @@ public class Coupon {
     }
 
     private void validateUsageLimit() {
-        if (currentUsage >= usageLimit) {
+        if (this.currentUsage >= this.usageLimit) {
             throw new CouponException.LimitExceeded(code);
         }
     }

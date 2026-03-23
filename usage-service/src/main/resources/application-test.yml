@@ -58,7 +58,7 @@ eureka:
 
 app:
   coupon-service:
-    url: http://localhost:8082
+    url: http://localhost:${wiremock.server.port}
   geoip:
     proxy:
       enabled: true

@@ -1,82 +1,84 @@
-//package com.redemption.core.application;
-//
-//import com.redemption.core.domain.model.Coupon;
-//import com.redemption.core.domain.repository.CouponRepository;
-//import com.redemption.core.infrastructure.external.GeoIpClient;
-//import org.junit.jupiter.api.DisplayName;
-//import org.junit.jupiter.api.Test;
-//import org.springframework.beans.factory.annotation.Autowired;
-//import org.springframework.boot.test.context.SpringBootTest;
-//import org.springframework.test.context.bean.override.mockito.MockitoBean;
-//
-//import java.util.concurrent.CountDownLatch;
-//import java.util.concurrent.ExecutorService;
-//import java.util.concurrent.Executors;
-//import java.util.concurrent.atomic.AtomicInteger;
-//
-//import static org.assertj.core.api.Assertions.assertThat;
-//import static org.mockito.ArgumentMatchers.anyString;
-//import static org.mockito.BDDMockito.given;
-//
-//@SpringBootTest
-//class CouponConcurrencyTest {
-//
-//    @Autowired
-//    private CouponApplicationService couponService;
-//
-//    @Autowired
-//    private CouponRepository couponRepository;
-//
-//    @MockitoBean
-//    private GeoIpClient geoIpClient;
-//
-//    @Test
-//    @DisplayName("Concurrency: Only one user should be able to redeem a coupon with limit 1")
-//    void shouldHandleRaceConditionWithOptimisticLocking() throws InterruptedException {
-//        // Given: A coupon with a strict limit of 1
-//        String code = "FLASH-SALE";
-//        couponRepository.save(new Coupon(code, 1, "PL"));
-//        given(geoIpClient.fetchCountryCode(anyString())).willReturn("PL");
-//
-//        int numberOfThreads = 10;
-//        ExecutorService executor = Executors.newFixedThreadPool(numberOfThreads);
-//        CountDownLatch latch = new CountDownLatch(1); // Synchronization start
-//        CountDownLatch finishLatch = new CountDownLatch(numberOfThreads); // Synchronization end
-//
-//        AtomicInteger successCount = new AtomicInteger();
-//        AtomicInteger failureCount = new AtomicInteger();
-//
-//        // When: 10 threads try to redeem at the same time
-//        for (int i = 0; i < numberOfThreads; i++) {
-//            executor.execute(() -> {
-//                try {
-//                    latch.await(); // Wait for the "Go!" signal
-//                    couponService.processRedemption(code, "1.2.3.4");
-//                    successCount.incrementAndGet();
-//                } catch (Exception e) {
-//                    failureCount.incrementAndGet();
-//                } finally {
-//                    finishLatch.countDown();
-//                }
-//            });
-//        }
-//
-//        latch.countDown(); // "Go!" - Start all threads
-//        finishLatch.await(); // Wait for all threads to finish
-//
-//        // Then: Usage must be exactly 1, no matter how many threads tried
-//        Coupon finalCoupon = couponRepository.findByCode(code).orElseThrow();
-//
-//        assertThat(finalCoupon.getCurrentUsage())
-//                .as("Usage should not exceed the limit even under heavy load")
-//                .isEqualTo(1);
-//
-//        assertThat(successCount.get())
-//                .as("Only one thread should have succeeded")
-//                .isEqualTo(1);
-//
-//        assertThat(failureCount.get())
-//                .as("Remaining threads should have failed due to locking or limit")
-//                .isEqualTo(9);
-//    }
-//}
+package com.redemption.core.application;
+
+import com.redemption.core.domain.model.Coupon;
+import com.redemption.core.domain.repository.CouponRepository;
+import lombok.extern.slf4j.Slf4j;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.transaction.UnexpectedRollbackException;
+
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+@Slf4j
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
+class CouponConcurrencyTest {
+
+    @Autowired
+    private CouponApplicationService couponService;
+
+    @Autowired
+    private CouponRepository couponRepository;
+
+    @Test
+    void shouldHandleConcurrentRedemptionsCorrectly() throws InterruptedException {
+        // Given
+        final String code = "CONCURRENCY-2026";
+        final int numberOfThreads = 10;
+
+        // Prepare clean state: usage limit = 1 ensures only one thread should succeed
+        couponRepository.saveAndFlush(new Coupon(code, 1, "PL"));
+
+        final var successes = new AtomicInteger();
+        final var failures = new AtomicInteger();
+        final var startLatch = new CountDownLatch(1);
+        final var doneLatch = new CountDownLatch(numberOfThreads);
+
+        // When - Using Java 21 Virtual Threads
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            for (int i = 0; i < numberOfThreads; i++) {
+                executor.submit(() -> {
+                    try {
+                        startLatch.await(); // Synchronization point for simultaneous start
+
+                        var response = couponService.processInternalRedemption(code, "PL");
+
+                        if (response.success()) {
+                            successes.incrementAndGet();
+                        } else {
+                            // Business failures (e.g. Limit Exceeded) or caught Locking exceptions
+                            failures.incrementAndGet();
+                        }
+                    } catch (UnexpectedRollbackException e) {
+                        // Spring throws this when the transaction fails at the COMMIT stage (Proxy level)
+                        log.warn("Transaction rolled back due to concurrent modification");
+                        failures.incrementAndGet();
+                    } catch (Exception e) {
+                        log.error("Unexpected thread error", e);
+                        failures.incrementAndGet();
+                    } finally {
+                        doneLatch.countDown();
+                    }
+                });
+            }
+
+            startLatch.countDown(); // Start all virtual threads
+            doneLatch.await();      // Wait for completion
+        }
+
+        // Then
+        var finalCoupon = couponRepository.findByCode(code).orElseThrow();
+
+        log.info("Final results - Successes: {}, Failures: {}, Final usage: {}",
+                successes.get(), failures.get(), finalCoupon.getCurrentUsage());
+
+        // Assertions
+        assertThat(finalCoupon.getCurrentUsage()).isEqualTo(1);
+        assertThat(successes.get()).isEqualTo(1);
+        assertThat(failures.get()).isEqualTo(9);
+    }
+}

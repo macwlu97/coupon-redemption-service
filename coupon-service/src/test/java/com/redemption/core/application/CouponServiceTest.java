@@ -1,91 +1,109 @@
-//package com.redemption.core.application;
-//
-//import com.redemption.core.domain.model.Coupon;
-//import com.redemption.core.domain.repository.CouponRepository;
-//import com.redemption.core.domain.exception.CouponException;
-//import com.redemption.core.infrastructure.external.GeoIpClient;
-//import org.junit.jupiter.api.DisplayName;
-//import org.junit.jupiter.api.Test;
-//import org.junit.jupiter.api.extension.ExtendWith;
-//import org.mockito.InjectMocks;
-//import org.mockito.Mock;
-//import org.mockito.junit.jupiter.MockitoExtension;
-//
-//import java.util.Optional;
-//
-//import static org.assertj.core.api.Assertions.assertThat;
-//import static org.assertj.core.api.Assertions.assertThatThrownBy;
-//import static org.mockito.Mockito.*;
-//
-//@ExtendWith(MockitoExtension.class) // Enables Mockito support for JUnit 5
-//class CouponServiceTest {
-//
-//    @Mock
-//    private CouponRepository couponRepository; // Mocked database dependency
-//
-//    @Mock
-//    private GeoIpClient geoIpClient; // Mocked external API dependency
-//
-//    @InjectMocks
-//    private CouponApplicationService couponService; // Service with all mocks injected
-//
-//    @Test
-//    @DisplayName("Should successfully process redemption when country and limits are valid")
-//    void shouldProcessRedemptionFlow() {
-//        // Given
-//        String code = "SAVE10";
-//        String ip = "1.2.3.4";
-//        String countryCode = "US";
-//        Coupon coupon = new Coupon(code, 10, countryCode);
-//
-//        // Mocking behavior: GeoIP returns US, and DB finds the coupon
-//        when(geoIpClient.fetchCountryCode(ip)).thenReturn(countryCode);
-//        when(couponRepository.findByCode(code.toUpperCase())).thenReturn(Optional.of(coupon));
-//
-//        // When
-//        couponService.processRedemption(code, ip); // Calling the correct method name
-//
-//        // Then
-//        assertThat(coupon.getCurrentUsage()).isEqualTo(1);
-//
-//        // Verify that the repository's save method was called with updated coupon
-//        verify(couponRepository, times(1)).save(coupon);
-//    }
-//
-//    @Test
-//    @DisplayName("Should throw NotFound exception when coupon code does not exist")
-//    void shouldHandleMissingCoupon() {
-//        // Given
-//        String code = "FAKE";
-//        String ip = "1.2.3.4";
-//
-//        when(geoIpClient.fetchCountryCode(ip)).thenReturn("PL");
-//        when(couponRepository.findByCode(code.toUpperCase())).thenReturn(Optional.empty());
-//
-//        // When & Then
-//        assertThatThrownBy(() -> couponService.processRedemption(code, ip))
-//                .isInstanceOf(CouponException.NotFound.class);
-//
-//        // Verify that save was never called
-//        verify(couponRepository, never()).save(any());
-//    }
-//
-//    @Test
-//    @DisplayName("Should throw InvalidCountry exception when GeoIP returns different country")
-//    void shouldFailWhenCountryMismatch() {
-//        // Given
-//        String code = "POLAND-ONLY";
-//        String ip = "8.8.8.8"; // Foreign IP
-//        Coupon coupon = new Coupon(code, 10, "PL");
-//
-//        when(geoIpClient.fetchCountryCode(ip)).thenReturn("US"); // Mocking US location
-//        when(couponRepository.findByCode(code.toUpperCase())).thenReturn(Optional.of(coupon));
-//
-//        // When & Then
-//        assertThatThrownBy(() -> couponService.processRedemption(code, ip))
-//                .isInstanceOf(CouponException.InvalidCountry.class);
-//
-//        // Ensure state wasn't saved after validation failure
-//        verify(couponRepository, never()).save(any());
-//    }
-//}
+package com.redemption.core.application;
+
+import com.redemption.core.api.internal.dto.CouponInternalResponse;
+import com.redemption.core.domain.model.Coupon;
+import com.redemption.core.domain.repository.CouponRepository;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.orm.ObjectOptimisticLockingFailureException;
+
+import java.util.Optional;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.*;
+
+/**
+ * Unit tests for CouponApplicationService focusing on redemption flow and error handling.
+ * All business exceptions are caught by the service and returned as Failure DTOs.
+ */
+@ExtendWith(MockitoExtension.class)
+class CouponServiceTest {
+
+    @Mock
+    private CouponRepository couponRepository;
+
+    @InjectMocks
+    private CouponApplicationService couponService;
+
+    @Test
+    @DisplayName("Should return success response when redemption satisfies all business rules")
+    void shouldReturnSuccessResponse() {
+        // Given
+        String code = "SAVE20";
+        String country = "PL";
+        Coupon coupon = new Coupon(code, 10, country);
+
+        when(couponRepository.findByCode(code.toUpperCase())).thenReturn(Optional.of(coupon));
+
+        // When
+        CouponInternalResponse response = couponService.processInternalRedemption(code, country);
+
+        // Then
+        assertThat(response.success()).isTrue();
+        assertThat(coupon.getCurrentUsage()).isEqualTo(1);
+        verify(couponRepository, times(1)).save(coupon);
+    }
+
+    @Test
+    @DisplayName("Should return NOT_FOUND error when coupon code does not exist in database")
+    void shouldReturnFailureWhenNotFound() {
+        // Given
+        String code = "MISSING";
+        when(couponRepository.findByCode(anyString())).thenReturn(Optional.empty());
+
+        // When
+        CouponInternalResponse response = couponService.processInternalRedemption(code, "PL");
+
+        // Then
+        assertThat(response.success()).isFalse();
+        assertThat(response.errorCode()).isEqualTo("NOT_FOUND");
+        verify(couponRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Should return INVALID_COUNTRY error when user country does not match coupon restriction")
+    void shouldReturnFailureWhenCountryMismatch() {
+        // Given
+        String code = "UK-ONLY";
+        Coupon coupon = new Coupon(code, 5, "GB"); // Restricted to GB
+
+        when(couponRepository.findByCode(code.toUpperCase())).thenReturn(Optional.of(coupon));
+
+        // When
+        // User is from PL, but coupon is for GB
+        CouponInternalResponse response = couponService.processInternalRedemption(code, "PL");
+
+        // Then
+        assertThat(response.success()).isFalse();
+        assertThat(response.errorCode()).isEqualTo("INVALID_COUNTRY");
+
+        // Ensure state was not changed and no save occurred
+        assertThat(coupon.getCurrentUsage()).isZero();
+        verify(couponRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Should return CONCURRENCY_ERROR when optimistic locking failure occurs")
+    void shouldReturnFailureOnConcurrencyConflict() {
+        // Given
+        String code = "FLASH-SALE";
+        Coupon coupon = new Coupon(code, 100, "PL");
+
+        when(couponRepository.findByCode(anyString())).thenReturn(Optional.of(coupon));
+
+        // Simulate Hibernate/JPA throwing an Optimistic Locking exception on save
+        doThrow(new ObjectOptimisticLockingFailureException(Coupon.class, code))
+                .when(couponRepository).save(any());
+
+        // When
+        CouponInternalResponse response = couponService.processInternalRedemption(code, "PL");
+
+        // Then
+        assertThat(response.success()).isFalse();
+        assertThat(response.errorCode()).isEqualTo("CONCURRENCY_ERROR");
+    }
+}

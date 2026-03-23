@@ -11,6 +11,12 @@ public sealed abstract class UsageException extends RuntimeException {
         this.errorCode = errorCode;
     }
 
+    public static final class ConcurrencyConflict extends UsageException {
+        public ConcurrencyConflict(String couponCode) {
+            super("Conflict detected for coupon: " + couponCode, "CONCURRENCY_ERROR");
+        }
+    }
+
     public static final class AlreadyRedeemed extends UsageException {
         public AlreadyRedeemed(String couponCode, String userId) {
             super(

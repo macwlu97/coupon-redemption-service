@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -26,7 +27,7 @@ public class CouponApplicationService {
      * Validates business rules and increments usage in a single transaction.
      * Uses Java 21 features and handles concurrency via Optimistic Locking.
      */
-    @Transactional
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public CouponInternalResponse processInternalRedemption(String code, String countryCode) {
         try {
             // Finding coupon using Java 21 Optional
@@ -42,12 +43,12 @@ public class CouponApplicationService {
             log.info("Redemption successful for coupon: {}", code);
             return CouponInternalResponse.ok();
 
-        } catch (CouponException e) {
-            log.warn("Business rule violation: {}", e.getMessage());
-            return CouponInternalResponse.failure(e.getCode(), e.getMessage());
         } catch (ObjectOptimisticLockingFailureException e) {
             log.error("Concurrency conflict for coupon: {}", code);
             return CouponInternalResponse.failure("CONCURRENCY_ERROR", "Concurrent update detected");
+        } catch (CouponException e) {
+            log.warn("Business rule violation: {}", e.getMessage());
+            return CouponInternalResponse.failure(e.getCode(), e.getMessage());
         } catch (Exception e) {
             log.error("System error during redemption", e);
             return CouponInternalResponse.failure("SYSTEM_ERROR", "Unexpected failure");

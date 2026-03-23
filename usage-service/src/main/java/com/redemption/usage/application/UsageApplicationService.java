@@ -6,6 +6,7 @@ import com.redemption.usage.domain.repository.UsageHistoryRepository;
 import com.redemption.usage.infrastructure.external.CouponServiceClient;
 import com.redemption.usage.infrastructure.external.GeoIpService;
 import com.redemption.usage.infrastructure.external.dto.CouponInternalResponse;
+import io.github.resilience4j.retry.annotation.Retry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -21,22 +22,27 @@ public class UsageApplicationService {
     private final GeoIpService geoIpService;
 
     /**
-     * Main entry point for redeeming a coupon in a microservice architecture.
+     * Entry point using Virtual Threads (implicit in Java 21+ Spring Boot 3.4)
+     * We REMOVE @Transactional from here to avoid holding DB connections during network I/O.
      */
-    @Transactional
+    @Retry(name = "couponServiceRetry")
     public String redeem(String couponCode, String userIp) {
+        String code = couponCode.toUpperCase();
         log.info("Starting redemption flow for code: {} from IP: {}", couponCode, userIp);
 
-        // 1. Resolve Location (Infrastructure Layer)
+        log.info("Starting redemption flow for code: {} from IP: {}", code, userIp);
+
+        // 1. Idempotency check (Domain Layer)
+        // Ensure this specific user/IP hasn't used this coupon already.
+        if (usageRepository.existsByCouponCodeAndUserId(code, userIp)) {
+            log.warn("Double redemption blocked: {} by {}", code, userIp);
+            throw new UsageException.AlreadyRedeemed(code, userIp);
+        }
+
+        // 2. Resolve Location (Infrastructure Layer),
+        // GeoIP - Always outside transaction
         // Moved here to decouple coupon-service from GeoIP concerns.
         String country = geoIpService.getCountryCode(userIp);
-
-        // 2. Idempotency check (Domain Layer)
-        // Ensure this specific user/IP hasn't used this coupon already.
-        if (usageRepository.existsByCouponCodeAndUserId(couponCode.toUpperCase(), userIp)) {
-            log.warn("User with IP {} already redeemed coupon {}", userIp, couponCode);
-            throw new UsageException.AlreadyRedeemed(couponCode.toUpperCase(), userIp);
-        }
 
         // 3. Remote Validation & Update (Infrastructure - Feign Call)
         // We call coupon-service to perform global usage checks.
@@ -45,19 +51,18 @@ public class UsageApplicationService {
                 country
         );
 
+        // 4. Handle Specific Concurrency Error for Retry
         if (!response.success()) {
-            log.error("Coupon service rejected redemption: {} - {}",
-                    response.errorCode(),
-                    response.message());
+            if ("CONCURRENCY_ERROR".equals(response.errorCode())) {
+                log.warn("Conflict in coupon-service for {}. Retry will be triggered.", couponCode);
+                throw new UsageException.ConcurrencyConflict(couponCode);
+            }
             throw new UsageException.RemoteServiceError(response.message(), response.errorCode());
         }
 
-        // 4. Record Audit Log (Domain Layer)
-        // Local history storage for reporting and future limit checks.
-        var history = new UsageHistory(couponCode.toUpperCase(), userIp);
-        usageRepository.save(history);
-
-        log.info("Redemption successfully completed for IP: {}", userIp);
+        // 5. Finalize - Only this part is Transactional
+        usageRepository.save(new UsageHistory(code, userIp));
+        log.info("Redemption successful for IP: {}", userIp);
 
         return country;
     }
