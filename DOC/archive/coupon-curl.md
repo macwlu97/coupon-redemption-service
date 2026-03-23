@@ -1,62 +1,103 @@
-# 🧪 Testing Guide (Manual API Tests)
+### `API_TESTING.md`
 
-This document contains a set of `curl` commands to verify the functionality of the **Coupon Service**. You can run these commands directly from your terminal (bash/zsh).
+# 🧪 API Testing Guide (Recruitment Task Validation)
 
-## 1. List All Coupons
-Verify if the initial data from `import.sql` was loaded correctly into the H2 database.
-```bash
-curl -X GET http://localhost:8081/api/v1/coupons \
-     -H "Accept: application/json" |  jq
-```
+This guide contains a series of `curl` commands to verify that all business requirements of the recruitment task have been met.
 
 ---
 
-## 2. Create a New Coupon
-Add a new coupon specifically for the German market (`DE`).
+## 1. Coupon Management (`coupon-service` - Port 8082)
+
+### 📋 List All Coupons
+Verify the initial state of the database and initial coupons.
 ```bash
-curl -X POST http://localhost:8081/api/v1/coupons \
+curl -X GET http://localhost:8082/api/v1/coupons \
+     -H "Accept: application/json"
+```
+
+### ✨ Create a New Coupon (Requirement: Uniqueness & Country)
+Create a coupon for the Polish market with a limit of 2 uses.
+```bash
+curl -X POST http://localhost:8082/api/v1/coupons \
      -H "Content-Type: application/json" \
      -d '{
-       "code": "BERLIN2026",
-       "usageLimit": 50,
-       "targetCountry": "DE"
-     }' |  jq
+       "code": "SUMMER2026",
+       "usageLimit": 2,
+       "targetCountry": "PL"
+     }'
 ```
 
 ---
 
-## 3. Redeem Coupon (Success Case - Poland)
-Redeem the `WIOSNA2026` coupon (which is restricted to `PL`).
-We simulate a Polish IP address using the `X-Forwarded-For` header.
+## 2. Redemption Flow (`usage-service` - Port 8081)
+
+### ✅ Success: Valid Redemption (Requirement: Geographic Validation)
+Redeem `WIOSNA2026` using a Polish IP address.
 ```bash
-curl -i -X POST "http://localhost:8081/api/v1/coupons/WIOSNA2026/redeem" \
-     -H "X-Forwarded-For: 5.173.0.1"
+curl -i -X POST "http://localhost:8081/api/v1/usages/SUMMER2026/redeem" \
+     -H "X-Forwarded-For: 89.64.12.150" \
+     -d ''
 ```
-*Expected Response: `200 OK` or `204 No Content`.*
+*Expected: `200 OK` or `201 Created`. Current usage counter should increment.*
 
----
-
-## 4. Redeem Coupon (Failure - Geographic Restriction)
-Attempt to use the same Polish coupon while "located" in Germany.
+### ❌ Failure: Case Insensitivity Test (Requirement: Unique Codes)
+Trying to create `summer2026` should fail if `SUMMER2026` exists (business logic validation).
 ```bash
-curl -i -X POST "http://localhost:8081/api/v1/coupons/WIOSNA2026/redeem" \
-     -H "X-Forwarded-For: 3.120.0.1"
+curl -i -X POST http://localhost:8082/api/v1/coupons \
+     -H "Content-Type: application/json" \
+     -d '{"code": "summer2026", "usageLimit": 10, "targetCountry": "PL"}'
 ```
-*Expected Response: `400 Bad Request` or `422 Unprocessable Entity` with an error message regarding the country mismatch.*
+*Expected: `409 Conflict` (Codes are case-insensitive).*
 
----
-
-## 5. Non-Existent Coupon
-Try to redeem a code that doesn't exist in the database.
+### ❌ Failure: Wrong Country (Requirement: IP-based Restriction)
+Attempt to use the Polish coupon from a German IP.
 ```bash
-curl -i -X POST "http://localhost:8081/api/v1/coupons/INVALID-CODE/redeem" \
-     -H "X-Forwarded-For: 5.173.0.1" 
+curl -i -X POST "http://localhost:8081/api/v1/usages/SUMMER2026/redeem" \
+     -H "X-Forwarded-For: 5.147.160.1" \
+     -d ''
 ```
-*Expected Response: `404 Not Found`.*
+*Expected: `422 Unprocessable Entity` (Invalid Country).*
+
+### ❌ Failure: Duplicate User (Requirement: One Use Per User)
+The same user tries to redeem the same coupon again.
+```bash
+curl -i -X POST "http://localhost:8081/api/v1/usages/SUMMER2026/redeem" \
+     -H "X-Forwarded-For: 89.64.12.150" \
+     -d ''
+```
+*Expected: `409 Conflict` (User has already used this coupon).*
+
+### ❌ Failure: Limit Exceeded (Requirement: Usage Limit)
+Redeem the second slot, then try a third time.
+```bash
+# Fulfill 2nd slot
+curl -X POST "http://localhost:8081/api/v1/usages/SUMMER2026/redeem" \
+     -H "X-Forwarded-For: 89.64.12.150" -H "User-Id: user_002" -d ''
+
+# Try 3rd time
+curl -i -X POST "http://localhost:8081/api/v1/usages/SUMMER2026/redeem" \
+     -H "X-Forwarded-For: 89.64.12.150" -H "User-Id: user_003" -d ''
+```
+*Expected: `409 Conflict` or `422` (Usage limit reached).*
+
+### ❌ Failure: Non-Existent Coupon (Requirement: Existence Check)
+```bash
+curl -i -X POST "http://localhost:8081/api/v1/usages/BRAK-KUPONU/redeem" \
+     -H "X-Forwarded-For: 89.64.12.150" -d ''
+```
+*Expected: `404 Not Found`.*
+
 
 ---
 
-## 💡 Troubleshooting Note
-If you are testing on `localhost` and your service returns `127.0.0.1` regardless of the header, the GeoIP provider might default to a specific country. For a production-grade showcase, ensure your `GeoIpClient` is configured to trust the `X-Forwarded-For` header.
+## ⚡ Error Summary
+
+| Requirement | Scenario | Expected Status |
+| :--- | :--- | :--- |
+| **Uniqueness** | Existing code (case-insensitive) | `409 Conflict` |
+| **Geo-fencing** | IP from unauthorized country | `422 Unprocessable Entity` |
+| **Usage Limit** | Max uses reached | `409 Conflict / 422` |
+| **Anti-Fraud** | User redeems same coupon twice | `409 Conflict` |
+| **Data Integrity** | Coupon code does not exist | `404 Not Found` |
 
 ---
