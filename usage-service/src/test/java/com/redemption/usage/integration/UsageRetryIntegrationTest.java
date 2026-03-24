@@ -12,7 +12,19 @@ import org.springframework.test.context.ActiveProfiles;
 import static com.github.tomakehurst.wiremock.client.WireMock.*;
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest
+@SpringBootTest(
+        properties = {
+                "spring.cloud.config.enabled=false",
+                "spring.config.import=",
+                "spring.cloud.config.fail-fast=false",
+                "spring.datasource.url=jdbc:h2:mem:usage_test_db;DB_CLOSE_DELAY=-1",
+                "spring.datasource.driver-class-name=org.h2.Driver",
+                "spring.datasource.username=sa",
+                "spring.datasource.password=",
+                "spring.jpa.database-platform=org.hibernate.dialect.H2Dialect",
+                "spring.jpa.hibernate.ddl-auto=create-drop"
+        }
+)
 @AutoConfigureWireMock(port = 0)
 @ActiveProfiles("test")
 class UsageRetryIntegrationTest {

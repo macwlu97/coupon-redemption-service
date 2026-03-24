@@ -36,11 +36,19 @@ public class IpApiProvider implements GeoIpProvider {
 
     @Override
     public String fetchCountryCode(String ip) {
-        var response = restClient.get()
-                .uri("/{ip}/json/", ip)
-                .retrieve()
-                .body(GeoIpResponse.class);
-        return (response != null) ? response.countryCode() : null;
+        // FIX: Extract only the first IP if X-Forwarded-For contains a chain
+        String cleanIp = (ip != null && ip.contains(",")) ? ip.split(",")[0].trim() : ip;
+
+        try {
+            var response = restClient.get()
+                    .uri("/{ip}/json/", cleanIp) // Now sending only '89.64.1.1'
+                    .retrieve()
+                    .body(GeoIpResponse.class);
+            return (response != null) ? response.countryCode() : null;
+        } catch (Exception e) {
+            // Log the error so the circuit breaker can track it
+            throw new RuntimeException("GeoIP fetch failed for IP: " + cleanIp, e);
+        }
     }
 
     @Override public int getPriority() { return 1; }

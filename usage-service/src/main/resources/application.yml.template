@@ -30,7 +30,7 @@ spring:
       mode: always
 
   datasource:
-    url: jdbc:postgresql://postgres:5432/usage_db
+    url: jdbc:postgresql://${DB_HOST:localhost}:5432/usage_db
     username: ${DB_USER:maciejwnuklipinski}
     password: ${DB_PASS:pswd}
     driver-class-name: org.postgresql.Driver
@@ -53,8 +53,8 @@ app:
     # Proxy settings for external API calls
     proxy:
       enabled: true
-      host: 34.158.226.196
-      port: 443
+      host: 154.73.28.89
+      port: 8080
     ip-api:
       url: https://ipapi.co/
     abstract-api:

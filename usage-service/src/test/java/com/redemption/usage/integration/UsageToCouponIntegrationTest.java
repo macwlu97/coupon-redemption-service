@@ -22,7 +22,20 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(
+        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = {
+                "spring.cloud.config.enabled=false",
+                "spring.cloud.config.import-check.enabled=false",
+                "spring.config.import=",
+                "coupon-service.url=http://localhost:${wiremock.server.port}",
+                "spring.cloud.discovery.enabled=false",
+                "spring.datasource.url=jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1",
+                "spring.datasource.driver-class-name=org.h2.Driver",
+                "spring.jpa.database-platform=org.hibernate.dialect.H2Dialect",
+                "spring.sql.init.mode=never"
+        }
+)
 @AutoConfigureWireMock(port = 0)
 @ActiveProfiles("test")
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)

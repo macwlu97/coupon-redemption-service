@@ -1,36 +1,24 @@
 services:
-  # --- DATABASES ---
-  coupon-db:
+  # Infrastructure: Database
+  postgres:
     image: postgres:16-alpine
-    container_name: coupon-db
+    container_name: postgres
     environment:
-      POSTGRES_DB: coupon_db
-      POSTGRES_USER: couponcoupontest
-      POSTGRES_PASSWORD: pswd
+      - POSTGRES_USER=maciejwnuklipinski
+      - POSTGRES_PASSWORD=pswd
+    volumes:
+      - ./init-db:/docker-entrypoint-initdb.d
+    ports:
+      - "5433:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U couponcoupontest -d coupon_db"]
+      test: ["CMD-SHELL", "pg_isready -U maciejwnuklipinski"]
       interval: 5s
       timeout: 5s
       retries: 5
     networks:
       - redemption-network
 
-  usage-db:
-    image: postgres:16-alpine
-    container_name: usage-db
-    environment:
-      POSTGRES_DB: usage_db
-      POSTGRES_USER: usageusagetest
-      POSTGRES_PASSWORD: pswd
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U usageusagetest -d usage_db"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    networks:
-      - redemption-network
-
-  # --- MESSAGING: KAFKA (Standard Confluent Images) ---
+  # Infrastructure: Messaging (Kafka & Zookeeper)
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
     container_name: zookeeper
@@ -43,19 +31,20 @@ services:
   kafka:
     image: confluentinc/cp-kafka:7.5.0
     container_name: kafka
+    ports:
+      - "9092:9092"
     depends_on:
       - zookeeper
     environment:
       KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
-      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
     networks:
       - redemption-network
 
-  # --- SPRING CLOUD ---
+  # Discovery Server
   eureka-server:
     build:
       context: .
@@ -63,9 +52,14 @@ services:
     container_name: eureka-server
     ports:
       - "8761:8761"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8761/actuator/health"]
+      interval: 10s
+      retries: 5
     networks:
       - redemption-network
 
+  # Config Server
   config-server:
     build:
       context: .
@@ -74,13 +68,41 @@ services:
     ports:
       - "8888:8888"
     environment:
+      - SPRING_CLOUD_CONFIG_SERVER_GIT_URI=${GIT_URI}
+      - SPRING_CLOUD_CONFIG_SERVER_GIT_USERNAME=${GIT_USERNAME}
+      - SPRING_CLOUD_CONFIG_SERVER_GIT_PASSWORD=${GIT_PASSWORD}
       - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
     depends_on:
-      - eureka-server
+      eureka-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8888/actuator/health"]
+      interval: 10s
+      retries: 10
     networks:
       - redemption-network
 
-  # --- BUSINESS SERVICES ---
+  # API Gateway (The main entry point)
+  api-gateway:
+    build:
+      context: .
+      dockerfile: api-gateway/Dockerfile
+    container_name: api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+    depends_on:
+      config-server:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+    networks:
+      - redemption-network
+
+  # Coupon Microservice
   coupon-service:
     build:
       context: .
@@ -90,18 +112,22 @@ services:
       - "8082:8082"
     environment:
       - SPRING_PROFILES_ACTIVE=docker
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://coupon-db:5432/coupon_db
-      - SPRING_DATASOURCE_USERNAME=couponcoupontest
-      - SPRING_DATASOURCE_PASSWORD=pswd
-      - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092
-      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
       - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
+      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+      - KAFKA_HOST=kafka
+      - DB_USER=maciejwnuklipinski
+      - DB_PASS=pswd
     depends_on:
-      coupon-db:
+      config-server:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
     networks:
       - redemption-network
 
+  # Usage Microservice
   usage-service:
     build:
       context: .
@@ -112,35 +138,20 @@ services:
     environment:
       - APP_GEOIP_ENABLED=false
       - APP_DEFAULT_COUNTRY=PL
-      - SERVER_FORWARD_HEADERS_STRATEGY=native
       - SPRING_PROFILES_ACTIVE=docker
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://usage-db:5432/usage_db
-      - SPRING_DATASOURCE_USERNAME=usageusagetest
-      - SPRING_DATASOURCE_PASSWORD=pswd
-      - APP_COUPON_SERVICE_URL=http://coupon-service:8082
-      - SPRING_KAFKA_BOOTSTRAP_SERVERS=kafka:9092
-      - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
       - SPRING_CONFIG_IMPORT=optional:configserver:http://config-server:8888
-    depends_on:
-      usage-db:
-        condition: service_healthy
-      coupon-service:
-        condition: service_started
-    networks:
-      - redemption-network
-
-  api-gateway:
-    build:
-      context: .
-      dockerfile: api-gateway/Dockerfile
-    container_name: api-gateway
-    ports:
-      - "8080:8080"
-    environment:
       - EUREKA_CLIENT_SERVICEURL_DEFAULTZONE=http://eureka-server:8761/eureka/
+      - KAFKA_HOST=kafka
+      - COUPON_SERVICE_URL=http://coupon-service:8082
+      - DB_USER=maciejwnuklipinski
+      - DB_PASS=pswd
     depends_on:
-      - eureka-server
-      - usage-service
+      config-server:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      kafka:
+        condition: service_started
     networks:
       - redemption-network
 

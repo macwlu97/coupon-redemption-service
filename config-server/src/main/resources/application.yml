@@ -2,24 +2,46 @@ server:
   port: 8888
 
 spring:
+  application:
+    name: config-server
   cloud:
     config:
       server:
         git:
+          # Centralized Git repository for configurations
           uri: ${GIT_URI}
           default-label: master
           username: ${GIT_USERNAME}
           password: ${GIT_PASSWORD}
-          searchPaths:
-            - service1
-            - service2
 
-logging:
-  level:
-    org.springframework.cloud.config: DEBUG
+          # Force the server to clone the repo on startup to catch errors early
+          clone-on-start: true
 
+          # Connection timeouts to prevent the service from hanging
+          timeout: 5
+          refresh-rate: 60 # How often to check for changes in Git (in seconds)
+
+          # Paths in your external repo where the YAML files are stored
+          search-paths:
+            - coupon-service
+            - usage-service
+            - api-gateway
+
+          # Ensures the local copy is cleaned up if it gets corrupted
+          force-pull: true
+
+# Monitoring and Management
 management:
   endpoints:
     web:
       exposure:
-        include: "*"
+        include: "*" # Allows /actuator/health and /actuator/env for debugging
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    # Essential for debugging Git SSH/HTTPS handshake issues
+    org.springframework.cloud.config: DEBUG
+    org.eclipse.jgit: INFO

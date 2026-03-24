@@ -19,7 +19,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Full Flow Integration Test (E2E).
  * Verifies the entire chain from REST Controller to Database.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(
+        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = {
+                "spring.cloud.config.enabled=false",
+                "spring.config.import=",
+                "spring.cloud.config.fail-fast=false"
+        }
+)
 @ActiveProfiles("test")
 class CouponFullFlowIntTest {
 

@@ -12,6 +12,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -29,6 +30,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Uses @MockitoBean (Spring Boot 3.4+) to mock the application service.
  */
 @WebMvcTest(CouponController.class)
+@TestPropertySource(properties = {
+        "spring.cloud.config.enabled=false",
+        "spring.config.import=",
+        "spring.cloud.config.fail-fast=false"
+})
 class CouponControllerTest {
 
     @Autowired

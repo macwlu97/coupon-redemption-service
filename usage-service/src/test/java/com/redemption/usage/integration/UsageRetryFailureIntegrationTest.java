@@ -21,12 +21,24 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * We override Circuit Breaker properties to prevent it from opening
  * during retry attempts, ensuring we test only the Retry logic.
  */
-@SpringBootTest(properties = {
-        // Increase thresholds so the Circuit Breaker doesn't trip and trigger the fallback
-        // during our Retry test iterations.
-        "resilience4j.circuitbreaker.instances.internalServiceCB.failureRateThreshold=100",
-        "resilience4j.circuitbreaker.instances.internalServiceCB.slidingWindowSize=20"
-})
+@SpringBootTest(
+        webEnvironment = SpringBootTest.WebEnvironment.MOCK,
+        properties = {
+                "spring.cloud.config.enabled=false",
+                "spring.cloud.config.import-check.enabled=false",
+                "spring.config.import=",
+                "coupon-service.url=http://localhost:${wiremock.server.port}",
+                "spring.cloud.discovery.enabled=false",
+                "spring.datasource.url=jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1",
+                "spring.datasource.driver-class-name=org.h2.Driver",
+                "spring.jpa.database-platform=org.hibernate.dialect.H2Dialect",
+                "spring.sql.init.mode=never",
+                // Increase thresholds so the Circuit Breaker doesn't trip and trigger the fallback
+                // during our Retry test iterations.
+                "resilience4j.circuitbreaker.instances.internalServiceCB.failureRateThreshold=100",
+                "resilience4j.circuitbreaker.instances.internalServiceCB.slidingWindowSize=20"
+        }
+)
 @AutoConfigureWireMock(port = 0)
 @ActiveProfiles("test")
 class UsageRetryFailureIntegrationTest {

@@ -28,11 +28,6 @@ public class GeoIpService {
 
     private final List<GeoIpProvider> providers;
 
-
-    /**
-     * Ensures that the application has at least one GeoIP provider configured on startup.
-     * Throws an exception early (Fail-Fast) if the configuration is missing.
-     */
     @PostConstruct
     public void validateConfig() {
         if (providers.isEmpty()) {
@@ -40,49 +35,47 @@ public class GeoIpService {
         }
     }
 
-    /**
-     * Attempts to resolve country code for a given IP address.
-     * Uses the primary provider (priority 1) with automatic retries and circuit breaking.
-     *
-     * @param ip The IPv4 or IPv6 address to locate.
-     * @return ISO country code (e.g., "PL").
-     */
     @CircuitBreaker(name = "geoipCB", fallbackMethod = "fallbackForCircuitBreaker")
     @Retry(name = "geoip")
-    public String getCountryCode(String ip) {
-        if (isLocal(ip)) return "PL";
+    public String getCountryCode(String rawIp) {
+        // 1. CLEAN IP IMMEDIATELY
+        String cleanIp = resolveCleanIp(rawIp);
+        log.info("Processing GeoIP lookup for cleaned IP: {}", cleanIp);
 
+        if (isLocal(cleanIp)) return "PL";
+
+        // 2. Use the cleaned IP for the primary provider
         return providers.stream()
                 .filter(p -> p.getPriority() == 1)
                 .findFirst()
-                .map(p -> p.fetchCountryCode(ip))
-                .orElseThrow(() -> new GeoIpConfigurationException("Primary GeoIP provider (priority 1) not found in the system. Check your configuration."));
+                .map(p -> p.fetchCountryCode(cleanIp)) // PASS CLEAN IP
+                .orElseThrow(() -> new GeoIpConfigurationException("Primary GeoIP provider (priority 1) not found."));
     }
 
-    /**
-     * Fallback logic triggered when the primary provider fails or the Circuit Breaker is OPEN.
-     * Iterates through secondary providers sorted by priority.
-     *
-     * @param ip The IP address that failed primary lookup.
-     * @param t The exception that triggered the fallback.
-     * @return Country code from a secondary provider or "UNKNOWN" as a last resort.
-     */
-    public String fallbackForCircuitBreaker(String ip, Throwable t) {
-        log.error("Primary GeoIP provider failed ({}). Switching to secondary...", t.getMessage());
+    public String fallbackForCircuitBreaker(String rawIp, Throwable t) {
+        // Even in fallback, we must ensure the IP is clean
+        String cleanIp = resolveCleanIp(rawIp);
+        log.error("Primary GeoIP provider failed ({}). Switching to secondary for IP: {}", t.getMessage(), cleanIp);
 
         return providers.stream()
                 .filter(p -> p.getPriority() > 1)
                 .sorted(Comparator.comparingInt(GeoIpProvider::getPriority))
-                .map(provider -> tryFetchCountryCode(provider, ip)) // Clean and descriptive
+                .map(provider -> tryFetchCountryCode(provider, cleanIp)) // PASS CLEAN IP
                 .filter(Objects::nonNull)
                 .findFirst()
                 .orElse("UNKNOWN");
     }
 
     /**
-     * Helper method to wrap provider calls and handle exceptions locally.
-     * This keeps the stream logic clean and readable.
+     * Extracts the first IP from a potential X-Forwarded-For chain.
+     * Essential for Docker/Gateway environments where multiple hops occur.
      */
+    private String resolveCleanIp(String ip) {
+        if (ip == null || ip.isBlank()) return "127.0.0.1";
+        // Take the first IP before the comma
+        return ip.split(",")[0].trim();
+    }
+
     private String tryFetchCountryCode(GeoIpProvider provider, String ip) {
         try {
             return provider.fetchCountryCode(ip);
@@ -92,19 +85,13 @@ public class GeoIpService {
         }
     }
 
-    /**
-     * Checks if the provided IP address is a loopback address.
-     * This implementation handles both IPv4 (127.0.0.1) and all IPv6 variants (e.g., ::1).
-     */
     private boolean isLocal(String ip) {
-        if (ip == null || ip.isBlank()) {
-            return false;
-        }
         try {
             InetAddress address = InetAddress.getByName(ip);
             return address.isLoopbackAddress();
         } catch (UnknownHostException e) {
-            log.warn("Invalid IP format detected: {}", ip);
+            // This should no longer happen frequently thanks to resolveCleanIp()
+            log.warn("Could not resolve host: {}", ip);
             return false;
         }
     }

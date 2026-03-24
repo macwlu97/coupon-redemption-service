@@ -15,7 +15,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @Slf4j
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
+@SpringBootTest(
+        webEnvironment = SpringBootTest.WebEnvironment.NONE,
+        properties = {
+                "spring.profiles.active=test",
+                "spring.cloud.config.enabled=false",
+                "spring.config.import=",
+                "spring.cloud.config.fail-fast=false"
+        }
+)
 class CouponConcurrencyTest {
 
     @Autowired

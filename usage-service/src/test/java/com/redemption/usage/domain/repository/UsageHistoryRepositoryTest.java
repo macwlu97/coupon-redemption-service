@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.TestPropertySource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -14,6 +15,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * This starts a lightweight Spring context with an in-memory database (H2).
  */
 @DataJpaTest
+@TestPropertySource(properties = {
+        "spring.cloud.config.enabled=false",
+        "spring.config.import=optional:configserver:",
+        "spring.cloud.config.fail-fast=false"
+})
 @ActiveProfiles("test")
 class UsageHistoryRepositoryTest {
 

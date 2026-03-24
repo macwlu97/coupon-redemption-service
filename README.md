@@ -143,7 +143,7 @@ For detailed technical information, architecture diagrams, and testing procedure
 | Document                                          | Description |
 |:--------------------------------------------------| :--- |
 | **[🏗️ Architecture Guide](DOC/ARCHITECTURE.md)** | Deep dive into **C4 Model** diagrams, DDD layers, and Design Patterns used (Strategy, Locking, etc.). |
-| **[🧪 API Testing Guide](DOC/API_TESTING.md)**    | A complete list of **cURL** commands to manually verify every business requirement and edge case. |
+| **[🧪 API Testing Guide](DOC/GATEWAY-CURL.md)**   | A complete list of **cURL** commands to manually verify every business requirement and edge case. |
 | **[🚀 Smoke Test Script](./smoke-test.sh)**       | Automated bash script to verify the entire system flow in seconds. |
 
 

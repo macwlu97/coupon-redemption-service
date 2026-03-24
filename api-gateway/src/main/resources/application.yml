@@ -1,48 +1,101 @@
+# ===================================================================
+# API GATEWAY CONFIGURATION (Port 8080)
+# This service acts as the single entry point (BFF - Backend For Frontend)
+# ===================================================================
 server:
-  port: 8079
+  port: 8080
 
 spring:
   application:
-    name: API-GATEWAY
-  cloud:
-    discovery:
-      reactive:
-        enabled: false
-    gateway:
-      locator:
-        enabled: true
-      routes:
-        - id: service1-route
-          uri: lb://SERVICE1/
-          predicates:
-            - Path=/products/**
-        - id: service2-route
-          uri: lb://SERVICE2/
-          predicates:
-            - Path=/service2/**
+    name: api-gateway
 
+  # Config Server Integration: Fetches centralized settings from the config service
+  config:
+    import: "optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}"
+
+  cloud:
+    gateway:
+      discovery:
+        locator:
+          # Disabled to prevent auto-generated routes from overlapping with manual definitions
+          enabled: false
+          lower-case-service-id: true
+
+      routes:
+        # --- ROUTE: Coupon Management (Admin & Internal) ---
+        # Handles coupon creation, listing, and internal validation requests
+        - id: coupon-service-route
+          uri: lb://coupon-service # lb:// prefix enables client-side load balancing via Eureka
+          predicates:
+            - Path=/api/v1/coupons/**, /api/v1/internal/coupons/**
+          filters:
+            - PreserveHostHeader # Ensures the original Host header is passed to the downstream service
+            - name: CircuitBreaker
+              args:
+                name: couponServiceCB
+                fallbackUri: forward:/fallback/coupon-service # Redirects here if service is down/slow
+
+        # --- ROUTE: Usage & Redemption ---
+        # Handles user-facing coupon redemption logic
+        - id: usage-service-route
+          uri: lb://usage-service
+          predicates:
+            - Path=/api/v1/usages/**
+          filters:
+            - PreserveHostHeader
+            - name: CircuitBreaker
+              args:
+                name: usageServiceCB
+                fallbackUri: forward:/fallback/usage-service
+
+# ===================================================================
+# FAULT TOLERANCE (Resilience4j)
+# Prevents cascading failures across the microservice ecosystem
+# ===================================================================
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        slidingWindowSize: 10 # Number of calls to monitor before calculating error rate
+        failureRateThreshold: 50 # Opens the circuit if 50% of requests fail
+        waitDurationInOpenState: 10s # Time to wait before entering 'half-open' state
+        permittedNumberOfCallsInHalfOpenState: 3
+  timelimiter:
+    configs:
+      default:
+        timeoutDuration: 30s # Maximum time allowed for a downstream response
+
+# ===================================================================
+# SERVICE DISCOVERY (Eureka)
+# ===================================================================
 eureka:
   client:
     service-url:
-      defaultZone: ${EUREKA_SERVER_URL} #http://192.168.0.100:8761/eureka/  # Eureka Server
-
+      defaultZone: ${EUREKA_SERVER_URL:http://eureka-server:8761/eureka/}
   instance:
-    hostname: api-gateway
-    prefer-ip-address: false
+    prefer-ip-address: true # Recommended for Docker environments to avoid DNS issues
+    instance-id: ${spring.application.name}:${random.value}
 
-logging:
-  level:
-    org.springframework.web: DEBUG
-    org.springframework.cloud.gateway: DEBUG
-
+# ===================================================================
+# OBSERVABILITY & DOCUMENTATION
+# ===================================================================
 management:
   endpoints:
     web:
       exposure:
-        include: health, info, metrics
-      base-path: /actuator
+        include: health, info, gateway, metrics # Exposes Actuator endpoints for monitoring
   endpoint:
+    gateway:
+      enabled: true # Allows checking active routes via /actuator/gateway/routes
     health:
       show-details: always
-    metrics:
-      enabled: true
+
+# Aggregated Swagger UI documentation from all services
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    urls:
+      - name: Coupon Service
+        url: /api/v1/coupons/v3/api-docs
+      - name: Usage Service
+        url: /api/v1/usages/v3/api-docs

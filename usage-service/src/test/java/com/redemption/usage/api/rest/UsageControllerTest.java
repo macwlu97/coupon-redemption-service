@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean; // New import for Spring 3.4+
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -20,6 +21,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Updated to use @MockitoBean as @MockBean is deprecated in Spring Boot 3.4+.
  */
 @WebMvcTest(UsageController.class)
+@TestPropertySource(properties = {
+        "spring.cloud.config.enabled=false",
+        "spring.config.import=",
+        "spring.datasource.url=jdbc:h2:mem:testdb" // Na wypadek gdyby kontroler miał autowired repozytorium (rzadkie, ale bywa)
+})
 class UsageControllerTest {
 
     @Autowired

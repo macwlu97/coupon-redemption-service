@@ -15,7 +15,7 @@ spring:
 
   # Database configuration - using placeholders for Docker/Local flexibility
   datasource:
-    url: jdbc:postgresql://postgres:5432/coupon_db
+    url: jdbc:postgresql://${DB_HOST:localhost}:5432/coupon_db
     username: ${DB_USER:maciejwnuklipinski}
     password: ${DB_PASS:pswd}
     driver-class-name: org.postgresql.Driver

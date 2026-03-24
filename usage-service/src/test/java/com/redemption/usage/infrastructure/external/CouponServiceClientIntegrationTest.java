@@ -17,7 +17,20 @@ import static org.assertj.core.api.Assertions.assertThat;
  * This ensures that HTTP requests are correctly formed and JSON responses are properly
  * deserialized into Java DTOs.
  */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
+@SpringBootTest(
+        webEnvironment = SpringBootTest.WebEnvironment.MOCK,
+        properties = {
+                "spring.cloud.config.enabled=false",
+                "spring.cloud.config.import-check.enabled=false",
+                "spring.config.import=",
+                "coupon-service.url=http://localhost:${wiremock.server.port}",
+                "spring.cloud.discovery.enabled=false",
+                "spring.datasource.url=jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1",
+                "spring.datasource.driver-class-name=org.h2.Driver",
+                "spring.jpa.database-platform=org.hibernate.dialect.H2Dialect",
+                "spring.sql.init.mode=never"
+        }
+)
 @AutoConfigureWireMock(port = 0) // Starts WireMock on a random available port
 @ActiveProfiles("test")
 class CouponServiceClientIntegrationTest {
