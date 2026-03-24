@@ -7,10 +7,10 @@ A high-performance, distributed system designed to manage and track the lifecycl
 ## 🚀 Architectural Highlights
 
 * **Microservices Architecture**: The system is decomposed into specialized services (`coupon-service` and `usage-service`) to allow independent scaling, deployment, and database isolation.
-* **Domain-Driven Design (DDD)**: Business logic is encapsulated within **Rich Domain Models** and **Aggregates**. This ensures that invariants (like usage limits and country restrictions) are enforced at the core of the application, avoiding "Anemic Domain Models."
-* **Concurrency & Data Integrity**: Uses **Optimistic Locking** (`@Version`) to handle high-traffic redemption spikes. This prevents the "over-redeem" problem where multiple threads might decrement a counter simultaneously without database deadlocks.
-* **Resilience & Fault Tolerance**: Powered by **Resilience4j**, the system implements **Circuit Breakers** and **Retries** for external GeoIP API calls. This prevents the "cascading failure" effect if the location provider goes down.
-* **Event-Driven Evolution**: Successful redemptions are published as events to **Apache Kafka**, allowing for asynchronous processing by audit or analytics services without increasing latency for the end-user.
+* **Domain-Driven Design (DDD)**: Business logic is encapsulated within **Rich Domain Models** and **Aggregates**. This ensures that invariants (like usage limits and country restrictions) are enforced at the core of the application.
+* **Concurrency & Data Integrity**: Uses **Optimistic Locking** (`@Version`) to handle high-traffic redemption spikes. This prevents the "over-redeem" problem without database deadlocks.
+* **Resilience & Fault Tolerance**: Powered by **Resilience4j**, the system implements **Circuit Breakers** and **Retries** for external GeoIP API calls.
+* **Centralized Configuration**: All service parameters are managed by a dedicated **Spring Cloud Config Server**, allowing for dynamic updates without service restarts.
 
 -----
 
@@ -18,26 +18,26 @@ A high-performance, distributed system designed to manage and track the lifecycl
 
 | Module | Responsibility | Port |
 | :--- | :--- | :--- |
-| **`api-gateway`** | Central entry point. Handles request routing, load balancing, and cross-cutting concerns. | 8080 |
-| **`eureka-server`** | Service Discovery. Allows microservices to find and communicate with each other dynamically. | 8761 |
-| **`coupon-service`** | The Source of Truth for coupon definitions, stock management, and country rules. | 8082 |
-| **`usage-service`** | Handles the redemption flow, GeoIP location logic, and per-user anti-fraud tracking. | 8081 |
+| **`eureka-server`** | Service Discovery. Dynamic service registration and heartbeat monitoring. | 8761 |
+| **`config-server`** | Centralized configuration management (Native/Git profiles). | 8888 |
+| **`api-gateway`** | Central entry point. Request routing, Load Balancing, and Swagger aggregation. | 8080 |
+| **`coupon-service`** | Source of Truth for coupon definitions, stock management, and geo-rules. | 8082 |
+| **`usage-service`** | Handles redemption flow, GeoIP detection, and per-user anti-fraud tracking. | 8081 |
 
 **Technologies:**
 
-* **Java 21**: Leveraging Virtual Threads (Project Loom) compatibility and modern syntax (Records, Pattern Matching).
-* **Spring Boot 3.4**: Core framework for microservice development.
-* **PostgreSQL**: Relational storage for ACID-compliant transactions.
-* **Apache Kafka**: Distributed event streaming.
-* **OpenFeign**: Declarative REST client for inter-service communication.
+* **Java 21**: Virtual Threads (Loom) ready, Records, and Pattern Matching.
+* **Spring Boot 3.4**: Latest stable framework for robust microservices.
+* **PostgreSQL**: ACID-compliant storage for mission-critical data.
+* **Apache Kafka**: Distributed event streaming for asynchronous audit logs.
+* **OpenFeign**: Declarative HTTP client for inter-service communication.
+* **WireMock & Testcontainers**: High-fidelity integration testing.
 * **SpringDoc OpenAPI**: Automatic Swagger documentation.
-
 -----
 
 ## 🏛️ Architectural Decisions & Design Patterns
 
-### 1\. Clean Architecture (Layered)
-
+### 1. Clean Architecture (Layered) & DDD
 The project follows a strict separation of concerns:
 
 * **Domain Layer**: Pure business logic (Entities, Value Objects, Domain Exceptions).
@@ -45,47 +45,52 @@ The project follows a strict separation of concerns:
 * **Infrastructure Layer**: Adapters for Databases, Kafka, and External APIs.
 * **Why?** This ensures the business logic remains testable and independent of external frameworks or UI changes.
 
-### 2\. Strategy Pattern (GeoIP Providers)
+### 2. Strategy Pattern (GeoIP Providers)
+Location detection is decoupled. The system can switch between providers (ipapi, MaxMind, or Mock) seamlessly. It includes a fallback strategy for `127.0.0.1` to facilitate local development.
 
-The location detection logic is decoupled from the service using the **Strategy Pattern**.
+### 3. Distributed Consistency
+* **Optimistic Locking**: Ensures atomicity of the "decrement stock" operation.
+* **Idempotency**: Built-in protection against network retries to prevent double-redemptions.
 
-* **Why?** It allows the system to switch between different GeoIP providers (ipapi, MaxMind, or Mock) without changing the core redemption logic. It also facilitates easy local testing via a fallback strategy for `127.0.0.1`.
-
-### 3\. Transactional Integrity
-
-Redemption involves checking a limit in one service and recording usage in another. To handle this in a distributed environment:
-
-* **Optimistic Locking** ensures the coupon counter is never decremented incorrectly.
-* **Idempotency** is baked into the redemption flow to prevent double-spending in case of network retries.
-
-### 4\. RFC 7807 (Problem Details)
-
-All business exceptions (e.g., `LIMIT_EXCEEDED`, `INVALID_COUNTRY`) are mapped to the **RFC 7807** standard.
-
-* **Why?** Provides a machine-readable and consistent error format for API consumers.
+### 4. RFC 7807 (Problem Details)
+Consistent, machine-readable error responses (e.g., `LIMIT_EXCEEDED`, `INVALID_COUNTRY`) across all microservices.
 
 -----
 
 ## 🚦 Getting Started
 
 ### Prerequisites
-
 * Docker & Docker Compose
-* JDK 21 (if running locally)
+* JDK 21 (for local execution)
 
 ### Quick Start (Docker Compose)
-
-The entire infrastructure (DBs, Kafka, Services) can be launched with a single command:
+Launch the entire ecosystem (Databases, Kafka, Services) with one command:
 
 ```bash
 docker-compose up --build -d
+````
+
+*Note: Wait \~40s for services to synchronize with Eureka and Config Server.*
+
+### Local Development & Testing
+
+To run tests locally without the need for a running Config Server:
+
+```bash
+mvn clean test -Dspring.profiles.active=test
 ```
 
-*Wait \~40 seconds for Eureka registration to complete.*
+*The `test` profile is pre-configured to use H2 and mock external dependencies.*
 
 -----
 
 ## 🧪 API Documentation & Testing
+
+### Swagger UI (Unified Access)
+
+Access all microservice APIs through the Gateway:
+
+* **API Gateway (Aggregated)**: [http://localhost:8080/swagger-ui.html](https://www.google.com/search?q=http://localhost:8080/swagger-ui.html)
 
 ### Interactive Documentation (Swagger)
 
@@ -94,9 +99,10 @@ Each service provides a comprehensive UI for API exploration:
 * **Coupon Service**: [http://localhost:8082/swagger-ui.html](https://www.google.com/search?q=http://localhost:8082/swagger-ui.html)
 * **Usage Service**: [http://localhost:8081/swagger-ui.html](https://www.google.com/search?q=http://localhost:8081/swagger-ui.html)
 
+
 ### Automated Smoke Test
 
-I have provided a bash script to verify the entire business flow (Creation -\> Successful Redemption -\> Limit Reached -\> Duplicate User Rejection):
+Verify the full business flow (Create -\> Redeem -\> Limit Check -\> Fraud Prevention):
 
 ```bash
 chmod +x smoke-test.sh
@@ -105,12 +111,10 @@ chmod +x smoke-test.sh
 
 ### Manual cURL Example (Geo-Fencing)
 
-To test country restrictions, use the `X-Forwarded-For` header:
-
 ```bash
 # Valid Polish IP
 curl -X POST http://localhost:8080/usage-service/api/v1/usages/SUMMER2026/redeem \
-  -H "User-Id: user_99" \
+  -H "User-Id: user_1" \
   -H "X-Forwarded-For: 89.64.12.150" \
   -H "Content-Type: application/json" -d '{}'
 ```
@@ -119,22 +123,19 @@ curl -X POST http://localhost:8080/usage-service/api/v1/usages/SUMMER2026/redeem
 
 ## 🛡️ Business Rules Enforcement
 
-1.  **Case-Insensitivity**: Coupon `SUMMER` and `summer` are treated as the same unique entity.
-2.  **Geo-Fencing**: Redemptions are strictly limited to the country defined during coupon creation (detected via IP).
-3.  **Stock Protection**: "First-come, first-served." Once the usage limit is reached, all subsequent attempts return `409 Conflict`.
-4.  **Anti-Fraud**: A specific `User-Id` cannot redeem the same coupon code twice, even if the total limit is not reached.
+1.  **Case-Insensitivity**: `SUMMER` == `summer`.
+2.  **Geo-Fencing**: Redemptions allowed only from the coupon's target country.
+3.  **Stock Protection**: "First-come, first-served" – strict limit enforcement.
+4.  **Anti-Fraud**: One redemption per `User-Id` per coupon code.
 
 -----
 
 ## 📝 Implementation Notes (For Reviewers)
 
-* **Concurrency**: The system is designed to handle high-volume traffic using non-blocking principles where possible.
-* **Testing Philosophy**: Unit tests cover complex domain logic (JUnit 5), while Integration tests (Testcontainers) verify database and Kafka interactions.
-* **Observability**: Standard Spring Boot Actuator endpoints are enabled for health monitoring.
+* **Resilience**: Every external call is wrapped in a Circuit Breaker.
+* **Testing**: Unit tests (JUnit 5/AssertJ) for Domain; Integration tests (WireMock/H2) for Infra.
+* **Scalability**: Stateless services ready for horizontal scaling behind the Gateway.
 
------
-
-This project was built with the mindset of a **production-ready** application, prioritizing code quality, maintainability, and system resilience.
 
 ## 📖 Project Documentation & Testing
 
@@ -147,4 +148,4 @@ For detailed technical information, architecture diagrams, and testing procedure
 | **[🚀 Smoke Test Script](./smoke-test.sh)**       | Automated bash script to verify the entire system flow in seconds. |
 
 
-
+This project was built with the mindset of a **production-ready** application, prioritizing code quality, maintainability, and system resilience.
