@@ -1,7 +1,6 @@
 package com.redemption.usage.application;
 
 import com.redemption.usage.domain.exception.UsageException;
-import com.redemption.usage.domain.model.UsageHistory;
 import com.redemption.usage.domain.repository.UsageHistoryRepository;
 import com.redemption.usage.infrastructure.external.CouponServiceClient;
 import com.redemption.usage.infrastructure.external.GeoIpService;
@@ -15,7 +14,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
@@ -24,6 +22,9 @@ class UsageApplicationServiceTest {
 
     @Mock
     private UsageHistoryRepository usageRepository;
+
+    @Mock
+    private UsageHistoryService historyService; // FIX: Added missing mock to prevent NPE
 
     @Mock
     private CouponServiceClient couponClient;
@@ -35,16 +36,18 @@ class UsageApplicationServiceTest {
     private UsageApplicationService usageService;
 
     @Test
-    @DisplayName("Redeem: Success flow - should return country and save history")
+    @DisplayName("Redeem: Success flow - should return country and delegate save to historyService")
     void shouldRedeemSuccessfully() {
         // GIVEN
-        String code = "SUMMER24";
+        String code = "summer24";
+        String upperCode = "SUMMER24";
         String ip = "1.2.3.4";
         String country = "PL";
 
-        when(usageRepository.existsByCouponCodeAndUserId(code, ip)).thenReturn(false);
+        // Mocking dependencies (Service converts code toUpperCase internally)
+        when(usageRepository.existsByCouponCodeAndUserId(upperCode, ip)).thenReturn(false);
         when(geoIpService.getCountryCode(ip)).thenReturn(country);
-        when(couponClient.validateAndIncrement(code, country))
+        when(couponClient.validateAndIncrement(upperCode, country))
                 .thenReturn(new CouponInternalResponse(true, null, "Success"));
 
         // WHEN
@@ -52,8 +55,10 @@ class UsageApplicationServiceTest {
 
         // THEN
         assertThat(result).isEqualTo(country);
-        verify(usageRepository).save(any(UsageHistory.class));
-        verify(couponClient).validateAndIncrement(code, country);
+
+        // VERIFY: Check if the task was delegated to the new service
+        verify(historyService).persistUsage(upperCode, ip);
+        verify(couponClient).validateAndIncrement(upperCode, country);
     }
 
     @Test
@@ -68,13 +73,14 @@ class UsageApplicationServiceTest {
         assertThatThrownBy(() -> usageService.redeem(code, ip))
                 .isExactlyInstanceOf(UsageException.AlreadyRedeemed.class);
 
-        // VERIFY: Ważne! Sprawdzamy, czy nie tracimy zasobów na zbędne wywołania API
+        // VERIFY: Ensure no resources are wasted on external API calls
         verifyNoInteractions(geoIpService);
         verifyNoInteractions(couponClient);
+        verifyNoInteractions(historyService);
     }
 
     @Test
-    @DisplayName("Redeem: Should throw ConcurrencyConflict when remote service returns CONCURRENCY_ERROR")
+    @DisplayName("Redeem: Should throw ConcurrencyConflict when remote service returns error")
     void shouldThrowConcurrencyConflict() {
         // GIVEN
         String code = "LIMIT-1";
@@ -86,20 +92,42 @@ class UsageApplicationServiceTest {
         // WHEN & THEN
         assertThatThrownBy(() -> usageService.redeem(code, ip))
                 .isExactlyInstanceOf(UsageException.ConcurrencyConflict.class);
+
+        // Database should NOT be hit if remote validation fails
+        verifyNoInteractions(historyService);
     }
 
     @Test
     @DisplayName("Redeem: Should handle unexpected remote service error")
     void shouldHandleRemoteError() {
         // GIVEN
+        String code = "CODE";
+        String ip = "8.8.8.8";
         when(geoIpService.getCountryCode(anyString())).thenReturn("FR");
         when(couponClient.validateAndIncrement(anyString(), anyString()))
-                .thenReturn(new CouponInternalResponse(false, "UNKNOWN_ERROR", "Something went wrong"));
+                .thenReturn(new CouponInternalResponse(false, "UNKNOWN", "Error"));
 
         // WHEN & THEN
-        assertThatThrownBy(() -> usageService.redeem("CODE", "8.8.8.8"))
+        assertThatThrownBy(() -> usageService.redeem(code, ip))
                 .isExactlyInstanceOf(UsageException.RemoteServiceError.class);
 
-        verify(usageRepository, never()).save(any());
+        verifyNoInteractions(historyService);
+    }
+
+    @Test
+    @DisplayName("Redeem: Should handle geofencing failure (InvalidCountry)")
+    void shouldHandleGeofencingFailure() {
+        // GIVEN
+        String code = "PL-ONLY";
+        String ip = "8.8.8.8"; // US IP
+        when(geoIpService.getCountryCode(ip)).thenReturn("US");
+        when(couponClient.validateAndIncrement(anyString(), anyString()))
+                .thenReturn(new CouponInternalResponse(false, "INVALID_COUNTRY", "Wrong country"));
+
+        // WHEN & THEN
+        assertThatThrownBy(() -> usageService.redeem(code, ip))
+                .isExactlyInstanceOf(UsageException.InvalidCountry.class);
+
+        verifyNoInteractions(historyService);
     }
 }
