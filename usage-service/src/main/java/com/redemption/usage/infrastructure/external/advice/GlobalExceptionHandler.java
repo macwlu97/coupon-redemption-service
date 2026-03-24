@@ -56,6 +56,8 @@ public class GlobalExceptionHandler {
     public ProblemDetail handleUsageException(UsageException ex) {
         HttpStatus status = switch (ex) {
             case UsageException.AlreadyRedeemed ignored -> HttpStatus.CONFLICT; // 409
+            case UsageException.InvalidCountry ignored -> HttpStatus.UNPROCESSABLE_ENTITY; // 422
+            case UsageException.NotFound ignored -> HttpStatus.NOT_FOUND;
             case UsageException.ConcurrencyConflict ignored -> HttpStatus.SERVICE_UNAVAILABLE; // 503 lub 409
             case UsageException.RemoteServiceError remoteErr -> switch (remoteErr.getErrorCode()) {
                 case "NOT_FOUND" -> HttpStatus.NOT_FOUND;          // 404
@@ -99,4 +101,5 @@ public class GlobalExceptionHandler {
         problem.setTitle("System Error");
         return problem;
     }
+
 }

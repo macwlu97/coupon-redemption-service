@@ -19,65 +19,87 @@ import org.springframework.transaction.annotation.Transactional;
 public class UsageApplicationService {
 
     private final UsageHistoryRepository usageRepository;
+    private final UsageHistoryService historyService; // Delegating DB write
     private final CouponServiceClient couponClient;
     private final GeoIpService geoIpService;
 
     /**
-     * Entry point using Virtual Threads (implicit in Java 21+ Spring Boot 3.4)
-     * We REMOVE @Transactional from here to avoid holding DB connections during network I/O.
+     * Orchestrates the redemption flow.
+     * Note: @Transactional is REMOVED from the main entry point to prevent
+     * holding DB connections during blocking network I/O (GeoIP/Feign).
      */
     @Retry(name = "couponServiceRetry")
     @CircuitBreaker(name = "internalServiceCB", fallbackMethod = "handleRedeemFallback")
-    @Transactional
-    public String redeem(String couponCode, String userIp) {
-        String code = couponCode.toUpperCase();
-        log.info("Starting redemption flow for code: {} from IP: {}", couponCode, userIp);
+    public String redeem(final String couponCode, final String userIp) {
+        final String code = couponCode.toUpperCase();
 
-        log.info("Starting redemption flow for code: {} from IP: {}", code, userIp);
+        final String cleanIp = extractClientIp(userIp);
 
-        // 1. Idempotency check (Domain Layer)
-        // Ensure this specific user/IP hasn't used this coupon already.
-        if (usageRepository.existsByCouponCodeAndUserId(code, userIp)) {
-            log.warn("Double redemption blocked: {} by {}", code, userIp);
-            throw new UsageException.AlreadyRedeemed(code, userIp);
-        }
+        log.info("Starting redemption flow | Code: {} | IP: {}", code, cleanIp);
 
-        // 2. Resolve Location (Infrastructure Layer),
-        // GeoIP - Always outside transaction
-        // Moved here to decouple coupon-service from GeoIP concerns.
-        String country = geoIpService.getCountryCode(userIp);
+        // 1. Idempotency Check (Read-only, no heavy transaction needed)
+        validateIdempotency(code, cleanIp);
 
-        // 3. Remote Validation & Update (Infrastructure - Feign Call)
-        // We call coupon-service to perform global usage checks.
-        CouponInternalResponse response = couponClient.validateAndIncrement(
-                couponCode.toUpperCase(),
-                country
-        );
+        // 2. Resolve Location (External I/O - No DB connection held)
+        String country = geoIpService.getCountryCode(cleanIp);
 
-        // 4. Handle Specific Concurrency Error for Retry
-        if (!response.success()) {
-            if ("CONCURRENCY_ERROR".equals(response.errorCode())) {
-                log.warn("Conflict in coupon-service for {}. Retry will be triggered.", couponCode);
-                throw new UsageException.ConcurrencyConflict(couponCode);
-            }
-            throw new UsageException.RemoteServiceError(response.message(), response.errorCode());
-        }
+        // 3. Remote Validation (External I/O - No DB connection held)
+        validateWithRemoteService(code, country);
 
-        // 5. Finalize - Only this part is Transactional
-        usageRepository.save(new UsageHistory(code, userIp));
-        log.info("Redemption successful for IP: {}", userIp);
+        // 4. Finalize - Short-lived transaction for DB write only
+        // this is a real transaction via Proxy
+        historyService.persistUsage(code, cleanIp);
 
+        log.info("Redemption successful | Code: {} | IP: {}", code, cleanIp);
         return country;
     }
 
+    private void validateIdempotency(String code, String userId) {
+        if (usageRepository.existsByCouponCodeAndUserId(code, userId)) {
+            log.warn("Blocking double redemption | Code: {} | User: {}", code, userId);
+            throw new UsageException.AlreadyRedeemed(code, userId);
+        }
+    }
+
+    private void validateWithRemoteService(String code, String country) {
+        CouponInternalResponse response = couponClient.validateAndIncrement(code, country);
+
+        if (!response.success()) {
+            handleRemoteError(code, response);
+        }
+    }
+
+    private void handleRemoteError(String code, CouponInternalResponse response) {
+        String error = response.errorCode();
+        if ("CONCURRENCY_ERROR".equals(error)) {
+            throw new UsageException.ConcurrencyConflict(code);
+        } else if ("INVALID_COUNTRY".equals(error)) {
+            throw new UsageException.InvalidCountry(code);
+        }
+        throw new UsageException.RemoteServiceError(response.message(), error);
+    }
+
+    /**
+     * Fallback for Resilience4j. Handles circuit breaker opening or service failures.
+     */
     public String handleRedeemFallback(String code, String ip, Throwable t) throws Throwable {
-        if (t instanceof UsageException.AlreadyRedeemed ||
-                t instanceof UsageException.ConcurrencyConflict) {
-            log.info("Business exception {} for code {}. Skipping fallback.", t.getClass().getSimpleName(), code);
+        if (t instanceof UsageException.AlreadyRedeemed
+                || t instanceof UsageException.ConcurrencyConflict
+                || t instanceof UsageException.InvalidCountry) {
+            log.debug("Business exception in redemption: {}. Bypassing fallback.", t.getMessage());
             throw t;
         }
 
-        log.error("Circuit is OPEN or Service failed. Reason: {}", t.getMessage());
-        throw new UsageException.RemoteServiceError("Service unavailable", "TRY_LATER");
+        log.error("Resilience4j Triggered | Reason: {} | Code: {}", t.getMessage(), code);
+        throw new UsageException.RemoteServiceError("External service currently unavailable", "SERVICE_UNAVAILABLE");
+    }
+
+    private String extractClientIp(String userIp) {
+        if (userIp == null || userIp.isEmpty()) {
+            return "unknown";
+        }
+        // X-Forwarded-For: client, proxy1, proxy2...
+        // Bierzemy tylko to, co jest przed pierwszym przecinkiem
+        return userIp.split(",")[0].trim();
     }
 }

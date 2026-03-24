@@ -26,6 +26,17 @@ public sealed abstract class UsageException extends RuntimeException {
         }
     }
 
+    public static final class InvalidCountry extends UsageException {
+        // Version A: Simple (matching your service call)
+        public InvalidCountry(String couponCode) {
+            super("Coupon " + couponCode + " is not available in your location", "INVALID_COUNTRY");
+        }
+
+        // Version B: Detailed (if you want to show actual/expected)
+        public InvalidCountry(String actual, String expected) {
+            super(String.format("Invalid country: %s. This coupon is restricted to: %s", actual, expected), "INVALID_COUNTRY");
+        }
+    }
 
     public static final class NotFound extends UsageException {
         public NotFound(String couponCode) {

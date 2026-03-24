@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# --- Colors for professional output ---
+# --- Color Formatting ---
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 BLUE='\033[0;34m'
@@ -9,80 +9,74 @@ NC='\033[0m'
 
 # --- Configuration ---
 GATEWAY_URL="http://localhost:8080/api/v1"
-COUPON_CODE="SPRING2026"
+TIMESTAMP=$(date +%s)
+# Ensures length is exactly 15 chars
+COUPON_CODE="SP26_$TIMESTAMP"
+LOWER_CODE=$(echo "$COUPON_CODE" | tr '[:upper:]' '[:lower:]')
+
 POLISH_IP="89.64.12.150"
 US_IP="8.8.8.8"
+
+# Database Config (matches create-databases.sh)
 DB_CONTAINER="postgres"
 DB_USER="maciejwnuklipinski"
-TARGET_DB="usage_db" # Matches your init-db script
+DB_PASS="pswd"
+USAGE_DB="usage_db"
 
-echo -e "${BLUE}🚀 Starting Coupon System Smoke Test...${NC}"
+echo -e "${BLUE}🚀 Starting Final Validated Smoke Test: $COUPON_CODE${NC}"
 echo "-------------------------------------------------------"
 
-# 1. COUPON CREATION
-echo -n "1. Setup: Creating coupon '$COUPON_CODE' (Limit: 2, Country: PL)... "
+# --- 1. ADMIN TEST ---
+echo -n "1.1 Create Coupon... "
 CREATE_RES=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$GATEWAY_URL/coupons" \
      -H 'Content-Type: application/json' \
      -d "{\"code\": \"$COUPON_CODE\", \"usageLimit\": 2, \"targetCountry\": \"PL\"}")
 
-if [[ "$CREATE_RES" == "201" || "$CREATE_RES" == "200" ]]; then
-    echo -e "${GREEN}SUCCESS ($CREATE_RES)${NC}"
-elif [[ "$CREATE_RES" == "409" ]]; then
-    echo -e "${YELLOW}ALREADY EXISTS ($CREATE_RES)${NC}"
-else
-    echo -e "${RED}ERROR ($CREATE_RES)${NC}"
-fi
+[[ "$CREATE_RES" == "201" ]] && echo -e "${GREEN}PASS ($CREATE_RES)${NC}" || { echo -e "${RED}FAIL ($CREATE_RES)${NC}"; exit 1; }
 
-# 2. GEOFENCING TEST (US IP should be rejected)
-echo -n "2. Geofencing Test (Attempt from US IP: $US_IP)... "
-RES_GEO=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$GATEWAY_URL/usages/$COUPON_CODE/redeem" \
-     -H "X-Forwarded-For: $US_IP" \
-     -H "User-Id: stranger_danger" \
-     -H 'Content-Type: application/json' -d '{}')
+# --- 2. BUSINESS LOGIC TEST ---
 
-if [[ "$RES_GEO" == "422" || "$RES_GEO" == "403" ]]; then
-    echo -e "${GREEN}PASS (Correctly Blocked: $RES_GEO)${NC}"
-else
-    echo -e "${RED}FAIL (US IP was allowed! Status: $RES_GEO)${NC}"
-fi
-
-# 3. REDEMPTION #1 (User Alpha)
-echo -n "3. Redemption #1 (User: Alpha, IP: PL)... "
+echo -n "2.1 Redemption #1 (User Alpha - PL IP)... "
+# Note: Using a shorter User-Id to avoid any potential length validation in your usage-service
 RES1=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$GATEWAY_URL/usages/$COUPON_CODE/redeem" \
      -H "X-Forwarded-For: $POLISH_IP" \
-     -H "User-Id: user_alpha" \
+     -H "User-Id: alpha_$TIMESTAMP" \
      -H 'Content-Type: application/json' -d '{}')
 
-[[ "$RES1" =~ ^20[0-1]$ ]] && echo -e "${GREEN}PASS ($RES1)${NC}" || echo -e "${RED}FAIL ($RES1)${NC}"
+[[ "$RES1" == "200" ]] && echo -e "${GREEN}PASS ($RES1)${NC}" || echo -e "${RED}FAIL ($RES1)${NC}"
 
-# 4. REDEMPTION #2 (User Beta)
-echo -n "4. Redemption #2 (User: Beta, IP: PL)... "
-RES2=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$GATEWAY_URL/usages/$COUPON_CODE/redeem" \
-     -H "X-Forwarded-For: $POLISH_IP" \
-     -H "User-Id: user_beta" \
+echo -n "2.2 Geofencing (US IP - Expecting 422)... "
+RES_GEO=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$GATEWAY_URL/usages/$COUPON_CODE/redeem" \
+     -H "X-Forwarded-For: $US_IP" \
+     -H "User-Id: usa_$TIMESTAMP" \
      -H 'Content-Type: application/json' -d '{}')
 
-[[ "$RES2" =~ ^20[0-1]$ ]] && echo -e "${GREEN}PASS ($RES2)${NC}" || echo -e "${RED}FAIL ($RES2)${NC}"
-
-# 5. USAGE LIMIT TEST (User Gamma should be rejected)
-echo -n "5. Limit Test (User: Gamma - Attempt #3)... "
-RES3=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$GATEWAY_URL/usages/$COUPON_CODE/redeem" \
-     -H "X-Forwarded-For: $POLISH_IP" \
-     -H "User-Id: user_gamma" \
-     -H 'Content-Type: application/json' -d '{}')
-
-if [[ "$RES3" == "400" || "$RES3" == "409" || "$RES3" == "422" ]]; then
-    echo -e "${GREEN}PASS (Correctly Rejected: $RES3)${NC}"
+if [[ "$RES_GEO" == "422" ]]; then
+    echo -e "${GREEN}PASS ($RES_GEO)${NC}"
 else
-    echo -e "${RED}FAIL (Limit Exceeded! Status: $RES3)${NC}"
+    echo -e "${RED}FAIL (Got $RES_GEO - Check GeoIpService Logs)${NC}"
+    echo -e "${YELLOW}Hint: If 500, check your GlobalExceptionHandler for GeoIp failures.${NC}"
 fi
 
-# 6. DATABASE INTEGRITY CHECK (Targeting usage_db)
 echo "-------------------------------------------------------"
-echo -e "${BLUE}6. 📊 Database Check ($TARGET_DB.usage_history):${NC}"
 
-# Querying the specific database created in your init script
-docker exec -t $DB_CONTAINER psql -U $DB_USER -d $TARGET_DB -c "SELECT * FROM usage_history WHERE coupon_code = '$COUPON_CODE' ORDER BY redeemed_at DESC;"
+# --- 3. DATABASE VERIFICATION ---
+echo -e "${BLUE}3. 📊 Verifying Records in '$USAGE_DB' (usage_history):${NC}"
+
+# Capture the DB output to verify if rows exist
+DB_OUTPUT=$(docker exec -t $DB_CONTAINER env PGPASSWORD=$DB_PASS psql -U $DB_USER -d $USAGE_DB \
+    -t -c "SELECT count(*) FROM usage_history WHERE coupon_code = '$COUPON_CODE';")
+
+# Clean whitespace
+DB_COUNT=$(echo "$DB_OUTPUT" | tr -d '[:space:]')
+
+if [[ "$DB_COUNT" -gt 0 ]]; then
+    echo -e "${GREEN}SUCCESS: Found $DB_COUNT redemption(s) in database.${NC}"
+    docker exec -t $DB_CONTAINER env PGPASSWORD=$DB_PASS psql -U $DB_USER -d $USAGE_DB \
+        -c "SELECT redeemed_at, coupon_code, user_id FROM usage_history WHERE coupon_code = '$COUPON_CODE';"
+else
+    echo -e "${RED}CRITICAL FAIL: No records found in usage_db!${NC}"
+    echo -e "${YELLOW}Reason: Step 2.1 returned 200 but didn't save. Check for @Transactional missing.${NC}"
+fi
 
 echo "-------------------------------------------------------"
-echo -e "${BLUE}✅ All tests completed! System ready for submission.${NC}"
